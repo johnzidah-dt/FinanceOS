@@ -1,0 +1,11 @@
+.DS_Store
+.git-local/
+.env
+.env.*
+!.env.example
+*.log
+tmp/
+work/
+outputs/*.tar.gz
+outputs/*.bundle
+finance-os-backup-*.json

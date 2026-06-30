@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Finance OS</title>
+    <link rel="stylesheet" href="./styles.css?v=26">
+  </head>
+  <body>
+    <section id="login-screen" class="login-screen">
+      <div class="login-art">
+        <div>
+          <p class="eyebrow">Finance OS</p>
+          <h1>Un espace financier par société.</h1>
+          <p>Factures, paiements, caisse, banque, arrêtés journaliers, dossiers et justificatifs dans une interface claire.</p>
+        </div>
+      </div>
+      <form id="login-form" class="login-card">
+        <div class="brand-row">
+          <span class="brand-icon">F</span>
+          <div>
+            <strong>Finance OS</strong>
+            <small>Connexion entreprise</small>
+          </div>
+        </div>
+        <label>Email<input name="email" type="email" value="admin@demo.local" autocomplete="username"></label>
+        <label>Mot de passe<input name="password" type="password" value="demo1234" autocomplete="current-password"></label>
+        <button class="btn primary" type="submit">Se connecter</button>
+        <button id="show-register-btn" class="btn ghost" type="button">Créer un compte et une organisation</button>
+        <p id="login-error" class="form-error" role="alert"></p>
+      </form>
+      <form id="register-form" class="login-card is-hidden">
+        <div class="brand-row">
+          <span class="brand-icon">F</span>
+          <div><strong>Créer votre espace</strong><small>Compte administrateur et première société</small></div>
+        </div>
+        <label>Nom complet<input name="name" required autocomplete="name"></label>
+        <label>Adresse email<input name="email" type="email" required autocomplete="email"></label>
+        <label>Mot de passe<input name="password" type="password" minlength="6" required autocomplete="new-password"></label>
+        <label>Nom de l’organisation<input name="organization" required></label>
+        <label>Pays<input name="country" value="Togo"></label>
+        <button class="btn primary" type="submit">Créer mon espace Finance OS</button>
+        <button id="show-login-btn" class="btn ghost" type="button">J’ai déjà un compte</button>
+        <p id="register-error" class="form-error" role="alert"></p>
+      </form>
+    </section>
+
+    <div id="app-shell" class="app-shell is-hidden">
+      <aside class="sidebar">
+        <div class="brand-row">
+          <span class="brand-icon">F</span>
+          <div>
+            <strong>Finance OS</strong>
+            <small id="entity-small-label">Société active</small>
+          </div>
+        </div>
+        <button class="btn new-action" id="quick-new-invoice">+ Nouvelle facture</button>
+        <nav aria-label="Navigation principale">
+          <button class="nav-item active" data-view="dashboard"><span>⌂</span> Tableau de bord</button>
+          <button class="nav-item" data-view="invoices"><span>▤</span> Factures</button>
+          <button class="nav-item" data-view="proformas"><span>▥</span> Proformas</button>
+          <button class="nav-item" data-view="contacts"><span>◎</span> Contacts</button>
+          <button class="nav-item" data-view="purchases"><span>▦</span> Achats fournisseurs</button>
+          <button class="nav-item" data-view="payroll"><span>▧</span> Gestion de la paie</button>
+          <button class="nav-item" data-view="payments"><span>◉</span> Paiements</button>
+          <button class="nav-item" data-view="cashdesk"><span>⇄</span> Opérations caisse</button>
+          <button class="nav-item" data-view="dailyops"><span>☑</span> Opérations journalières</button>
+          <button class="nav-item" data-view="accounts"><span>▣</span> Caisses & banques</button>
+          <button class="nav-item" data-view="folders"><span>◇</span> Dossiers</button>
+          <button class="nav-item" data-view="reports"><span>☷</span> Rapports</button>
+          <button class="nav-item" data-view="settings"><span>⚙</span> Paramètres</button>
+        </nav>
+        <div class="sidebar-footer"><strong>FinanceOS</strong><small>Crafted by Acceleratt Group.</small></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="mobile-menu-btn" class="btn icon mobile-menu-btn" type="button" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
+          <div class="entity-switcher">
+            <span>Société</span>
+            <select id="entity-select" aria-label="Société active"></select>
+            <button id="add-entity-btn" class="entity-add" type="button" title="Ajouter une société" aria-label="Ajouter une société">+</button>
+          </div>
+          <div class="search-box">⌕ <input id="global-search" placeholder="Rechercher facture, client, paiement..."></div>
+          <div class="top-actions">
+            <span class="pill danger" id="risk-pill">0 créance critique</span>
+            <button id="profile-btn" class="btn ghost">Profil</button>
+            <button id="logout-btn" class="btn primary">Déconnexion</button>
+          </div>
+        </header>
+
+        <section class="page-title">
+          <div>
+            <p class="eyebrow">Finance OS</p>
+            <h1 id="view-title">Tableau de bord</h1>
+          </div>
+          <p id="view-subtitle">Résumé décisionnel de la société sélectionnée.</p>
+        </section>
+
+        <section id="dashboard" class="view active-view">
+          <div id="entity-overview" class="stripe-summary"></div>
+          <div id="decision-metrics" class="metric-grid"></div>
+          <div class="dashboard-layout">
+            <section class="panel">
+              <div class="panel-head">
+                <div><h2>Santé financière</h2><p>Créances, encaissements, décaissements et trésorerie.</p></div>
+                <button class="btn subtle" data-view="reports">Voir reporting</button>
+              </div>
+              <div id="finance-bars" class="bar-stack"></div>
+            </section>
+            <section class="panel highlight-panel">
+              <div class="panel-head">
+                <div><h2>Priorités</h2><p>Actions à traiter pour cette société.</p></div>
+                <span class="status warn">Décisionnel</span>
+              </div>
+              <div id="priority-list" class="activity-list"></div>
+            </section>
+          </div>
+          <div class="dashboard-layout bottom">
+            <section class="panel">
+              <div class="panel-head"><div><h2>Factures à surveiller</h2><p>Retards et restes à payer.</p></div></div>
+              <div id="dashboard-invoices" class="table-wrap"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><div><h2>Flux récents</h2><p>Paiements, caisse et banque.</p></div></div>
+              <div id="activity-feed" class="activity-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="invoices" class="view">
+          <div class="section-actions">
+            <div><h2>Factures générées</h2><p>Liste complète avant création ou modification.</p></div>
+            <div class="inline-actions">
+              <button class="btn ghost" data-export="invoices">Exporter Excel</button>
+              <button id="new-invoice-btn" class="btn primary">+ Créer une facture</button>
+            </div>
+          </div>
+          <div id="invoice-validation-alert" class="notice-card validation-notice is-hidden"></div>
+          <div id="sequence-alert" class="notice-card is-hidden"></div>
+          <div id="invoice-table" class="table-wrap"></div>
+        </section>
+
+        <section id="proformas" class="view">
+          <div class="section-actions">
+            <div><h2>Proformas</h2><p>Brouillons, proformas envoyées, validations et transformation en facture.</p></div>
+            <div class="inline-actions">
+              <button class="btn ghost" data-export="proformas">Exporter Excel</button>
+              <button id="new-proforma-btn" class="btn primary">+ Créer une proforma</button>
+            </div>
+          </div>
+          <section class="panel">
+            <div class="panel-head"><h2>Liste des proformas</h2><p>Suivi commercial avant facturation.</p></div>
+            <div id="proforma-table" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="proforma-create" class="view">
+          <div class="section-actions">
+            <div><h2 id="proforma-editor-title">Nouvelle proforma</h2><p>Écran dédié pour créer ou modifier une proforma.</p></div>
+            <div class="inline-actions">
+              <button id="back-proformas-btn" class="btn ghost">Retour liste</button>
+              <button id="add-proforma-line" class="btn ghost">Ajouter ligne</button>
+              <button id="save-proforma-btn" class="btn primary">Enregistrer</button>
+              <button id="open-proforma-preview-btn" class="btn primary">Aperçu proforma</button>
+            </div>
+          </div>
+          <section class="panel editor-panel">
+            <form id="proforma-editor" class="editor-form"></form>
+          </section>
+        </section>
+
+        <section id="proforma-preview-view" class="view">
+          <div class="section-actions">
+            <div><h2>Aperçu proforma</h2><p>Prévisualisation séparée de la proforma.</p></div>
+            <div class="inline-actions">
+              <button id="back-proforma-editor-btn" class="btn ghost">Retour édition</button>
+              <button id="download-proforma-pdf" class="btn primary">Télécharger PDF</button>
+            </div>
+          </div>
+          <section class="invoice-preview full-preview" aria-label="Aperçu proforma">
+            <div id="proforma-page" class="invoice-page"></div>
+          </section>
+        </section>
+
+        <section id="contacts" class="view">
+          <div class="section-actions">
+            <div><h2>Contacts</h2><p>Clients et fournisseurs utilisés dans les factures, paiements et décaissements.</p></div>
+            <div class="inline-actions">
+              <div class="segmented">
+                <button class="chip active" data-contact-tab="client" aria-pressed="true">Clients</button>
+                <button class="chip" data-contact-tab="supplier" aria-pressed="false">Fournisseurs</button>
+              </div>
+              <button id="add-contact-btn" class="btn primary">+ Ajouter un contact</button>
+            </div>
+          </div>
+          <section class="panel">
+            <div class="panel-head"><h2 id="contact-list-title">Clients</h2><p>Liste avec logo, entreprise et contacts.</p></div>
+            <div id="contacts-list" class="contact-grid"></div>
+          </section>
+        </section>
+
+        <section id="invoice-create" class="view">
+          <div class="section-actions">
+            <div><h2 id="editor-title">Nouvelle facture</h2><p>Base vierge. Chaque champ et chaque ligne est modifiable.</p></div>
+            <div class="inline-actions">
+              <button id="back-invoices-btn" class="btn ghost">Retour liste</button>
+              <button id="add-section-btn" class="btn ghost">Ajouter section</button>
+              <button id="add-line-btn" class="btn ghost">Ajouter ligne</button>
+              <button id="save-invoice-btn" class="btn primary">Enregistrer</button>
+              <button id="open-preview-btn" class="btn primary">Aperçu facture</button>
+            </div>
+          </div>
+          <section class="panel editor-panel">
+            <form id="invoice-editor" class="editor-form"></form>
+          </section>
+        </section>
+
+        <section id="invoice-preview-view" class="view">
+          <div class="section-actions">
+            <div><h2>Aperçu facture</h2><p>Prévisualisation séparée pour éviter de couper l’édition.</p></div>
+            <div class="inline-actions">
+              <button id="back-editor-btn" class="btn ghost">Retour édition</button>
+              <button id="download-invoice-pdf" class="btn primary">Télécharger PDF</button>
+            </div>
+          </div>
+          <section class="invoice-preview full-preview" aria-label="Aperçu facture">
+            <div id="invoice-page" class="invoice-page"></div>
+          </section>
+        </section>
+
+        <section id="payments" class="view">
+          <div class="section-actions">
+            <div><h2>Paiements</h2><p>Enregistrement et liste des paiements. Les arrêtés sont dans Opérations journalières.</p></div>
+            <button class="btn ghost" data-export="payments">Exporter Excel</button>
+          </div>
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Enregistrer un paiement</h2><p>Paiement partiel ou total avec affectation.</p></div>
+              <form id="payment-form" class="form-grid"></form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Résumé paiements</h2><p>Encaissements de la société sélectionnée.</p></div>
+              <div id="payments-summary" class="activity-list"></div>
+            </section>
+          </div>
+          <div id="payments-table" class="table-wrap"></div>
+        </section>
+
+        <section id="purchases" class="view">
+          <div class="section-actions">
+            <div><h2>Achats fournisseurs</h2><p>Bons de commande, factures reçues, dettes et règlements.</p></div>
+            <div class="inline-actions">
+              <button class="btn ghost" data-export="purchases">Exporter Excel</button>
+              <button id="new-purchase-order-btn" class="btn ghost">+ Bon de commande</button>
+              <button id="new-supplier-invoice-btn" class="btn primary">Uploader une facture</button>
+            </div>
+          </div>
+          <div id="purchase-summary" class="metric-grid compact"></div>
+          <div class="segmented purchase-tabs">
+            <button class="chip active" data-purchase-tab="supplier-invoices" aria-pressed="true">Factures fournisseurs</button>
+            <button class="chip" data-purchase-tab="purchase-orders" aria-pressed="false">Bons de commande</button>
+            <button class="chip" data-purchase-tab="accounting" aria-pressed="false">Écritures comptables</button>
+          </div>
+          <section class="panel purchase-tab-panel" data-purchase-panel="supplier-invoices">
+            <div class="panel-head"><div><h2>Factures fournisseurs</h2><p>Dettes enregistrées et état des règlements.</p></div></div>
+            <div id="supplier-invoice-table" class="table-wrap"></div>
+          </section>
+          <section class="panel purchase-tab-panel is-hidden" data-purchase-panel="purchase-orders">
+            <div class="panel-head"><div><h2>Bons de commande</h2><p>Demandes d’achat pouvant être liées aux factures reçues.</p></div></div>
+            <div id="purchase-order-table" class="table-wrap"></div>
+          </section>
+          <section class="panel purchase-tab-panel is-hidden" data-purchase-panel="accounting">
+            <div class="panel-head"><div><h2>Comptabilisation</h2><p>Charges, dettes fournisseurs et règlements générés automatiquement.</p></div></div>
+            <div id="purchase-accounting-table" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="payroll" class="view">
+          <div class="section-actions">
+            <div><h2>Gestion de la paie</h2><p>Employés, calculs mensuels, bulletins et écritures comptables.</p></div>
+            <button id="new-employee-btn" class="btn primary">+ Ajouter un employé</button>
+          </div>
+          <div id="payroll-summary" class="metric-grid compact"></div>
+          <div class="segmented payroll-tabs">
+            <button class="chip active" data-payroll-tab="runs" aria-pressed="true">Paies mensuelles</button>
+            <button class="chip" data-payroll-tab="employees" aria-pressed="false">Employés</button>
+            <button class="chip" data-payroll-tab="rules" aria-pressed="false">Règles de calcul</button>
+          </div>
+          <section class="panel payroll-tab-panel" data-payroll-panel="runs">
+            <div class="panel-head"><div><h2>Préparer la paie</h2><p>Les calculs restent en brouillon jusqu’à validation.</p></div><form id="payroll-run-form" class="inline-actions"><input name="period" type="month" required><button class="btn primary" type="submit">Générer la paie</button></form></div>
+            <div id="payroll-run-table" class="table-wrap"></div>
+          </section>
+          <section class="panel payroll-tab-panel is-hidden" data-payroll-panel="employees">
+            <div class="panel-head"><div><h2>Registre des employés</h2><p>Dossiers salariés séparés des comptes utilisateurs.</p></div></div>
+            <div id="employee-table" class="table-wrap"></div>
+          </section>
+          <section class="panel payroll-tab-panel is-hidden" data-payroll-panel="rules">
+            <div class="panel-head"><div><h2>Règles applicables</h2><p>Taux configurables par société. Le barème fiscal sera finalisé avec votre modèle togolais.</p></div></div>
+            <div id="payroll-rules-summary" class="settings-list"></div>
+            <button class="btn ghost" type="button" id="open-payroll-settings">Modifier les règles</button>
+          </section>
+        </section>
+
+        <section id="employee-detail" class="view">
+          <div class="section-actions">
+            <div>
+              <button id="back-employees-btn" class="btn ghost" type="button">← Employés</button>
+              <h2 id="employee-detail-title">Dossier salarié</h2>
+              <p id="employee-detail-subtitle">Identité, contrat, coordonnées bancaires et historique de paie.</p>
+            </div>
+            <div class="inline-actions">
+              <button id="edit-employee-btn" class="btn ghost" type="button">Modifier</button>
+              <button id="end-employee-contract-btn" class="btn ghost" type="button">Mettre fin au contrat</button>
+              <button id="delete-employee-btn" class="btn danger" type="button">Supprimer le profil</button>
+            </div>
+          </div>
+          <div id="employee-detail-summary" class="metric-grid compact"></div>
+          <div class="grid two employee-detail-grid">
+            <section class="panel">
+              <div class="panel-head"><div><h2>Informations du salarié</h2><p>Identité, emploi et coordonnées.</p></div></div>
+              <div id="employee-personal-details" class="settings-list employee-details-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><div><h2>Contrat et banque</h2><p>Pièces et informations administratives.</p></div></div>
+              <div id="employee-contract-details" class="settings-list employee-details-list"></div>
+              <div id="employee-document-actions" class="employee-document-actions"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <div class="panel-head"><div><h2>Historique des bulletins</h2><p>Toutes les fiches générées pendant le cycle d’employabilité.</p></div></div>
+            <div id="employee-payroll-history" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="cashdesk" class="view">
+          <div class="section-actions"><div><h2>Caisse et décaissements</h2><p>Les sorties sont exclusivement créées à partir d’une fiche de décaissement.</p></div></div>
+          <div class="segmented cash-tabs">
+            <button class="chip active" data-cash-tab="journal" aria-pressed="true">Journal</button>
+            <button class="chip" data-cash-tab="operations" aria-pressed="false">Entrées & transferts</button>
+            <button class="chip" data-cash-tab="disbursements" aria-pressed="false">Décaissements</button>
+          </div>
+          <section class="panel cash-tab-panel" data-cash-panel="journal">
+            <div class="panel-head"><div><h2>Journal des opérations</h2><p>Traçabilité caisse et banque.</p></div><button class="btn ghost" data-export="cash">Exporter Excel</button></div>
+            <div id="cash-operations-table" class="table-wrap"></div>
+          </section>
+          <section class="panel cash-tab-panel is-hidden" data-cash-panel="operations">
+            <div class="panel-head"><h2>Opérations courantes</h2><p>Entrées et transferts internes uniquement.</p></div>
+            <form id="cash-operation-form" class="form-grid"></form>
+          </section>
+          <div class="cash-tab-panel is-hidden" data-cash-panel="disbursements">
+          <section class="panel">
+            <div class="panel-head"><h2>Nouveau décaissement</h2><p>Fiche à remplir, imprimer, signer puis réuploader.</p></div>
+            <form id="disbursement-form" class="form-grid"></form>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h2>Suivi des décaissements</h2><p>Factures liées, moyens de règlement et scans signés.</p></div></div>
+            <div id="disbursement-table" class="table-wrap"></div>
+          </section>
+          <section class="voucher-print panel">
+            <div class="panel-head">
+              <div><h2>Document prêt à imprimer</h2><p>Après signature, la version scannée est attachée à la fiche.</p></div>
+              <div class="inline-actions">
+                <label class="btn ghost upload-label">Uploader scan<input id="signed-voucher-upload" type="file" accept="image/*,.pdf"></label>
+                <button id="print-voucher-btn" class="btn primary">Télécharger PDF</button>
+              </div>
+            </div>
+            <div id="voucher-document" class="voucher-document"></div>
+          </section>
+          </div>
+        </section>
+
+        <section id="dailyops" class="view">
+          <div class="section-actions">
+            <div><h2>Opérations journalières</h2><p>Arrêté consolidé des paiements, opérations de caisse et opérations de banque.</p></div>
+            <div class="inline-actions">
+              <span id="close-countdown" class="pill ready">Arrêté disponible à 17h30</span>
+              <button id="early-close-btn" class="btn ghost">Arrêté anticipé</button>
+              <button id="daily-close-btn" class="btn primary">Faire l’arrêté du jour</button>
+            </div>
+          </div>
+          <div id="daily-summary" class="metric-grid compact"></div>
+          <section class="panel">
+            <div class="panel-head">
+              <div><h2>Retrouver une opération</h2><p>Choisissez une date pour consulter les opérations et l’arrêté du jour.</p></div>
+              <div class="inline-actions">
+                <input id="operation-date-picker" type="date">
+                <button id="find-operation-btn" class="btn ghost">Rechercher</button>
+              </div>
+            </div>
+            <div id="operation-search-results" class="table-wrap"></div>
+          </section>
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head">
+                <div><h2>Écritures du jour</h2><p>Paiements, caisse et banque à intégrer.</p></div>
+                <button class="btn ghost" data-export="daily">Exporter Excel</button>
+              </div>
+              <div id="daily-entries-table" class="table-wrap"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Arrêtés</h2><p>Clôtures générées pour la société.</p></div>
+              <div id="closure-list" class="activity-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="accounts" class="view">
+          <div class="section-actions">
+            <div><h2>Caisses & banques</h2><p>Résumé cliquable des soldes et mouvements par compte.</p></div>
+            <label class="btn primary upload-label">Uploader relevé bancaire<input id="statement-upload" type="file" accept=".csv,.xlsx,.xls,.pdf,image/*"></label>
+            <button id="add-account-btn" class="btn ghost">+ Nouveau compte</button>
+          </div>
+          <div id="account-cards" class="account-grid"></div>
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2 id="account-detail-title">État du compte</h2><p>Détail du compte sélectionné.</p></div>
+              <div id="account-detail" class="table-wrap"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Consolidation</h2><p>Relevés importés et écritures à rapprocher.</p></div>
+              <div id="reconciliation-list" class="activity-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="account-detail-view" class="view">
+          <div class="section-actions">
+            <div><h2 id="account-page-title">Détail du compte</h2><p id="account-page-subtitle">Coordonnées, soldes et mouvements.</p></div>
+            <button id="back-accounts-btn" class="btn ghost">Retour comptes</button>
+          </div>
+          <div id="account-profile" class="grid two"></div>
+          <section class="panel">
+            <div class="panel-head"><h2>Mouvements du compte</h2><p>Historique lié à ce compte.</p></div>
+            <div id="account-page-movements" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="folders" class="view">
+          <div class="section-actions">
+            <div><h2>Dossiers</h2><p>Tous les dossiers, pièces générées, opérations et historiques.</p></div>
+          </div>
+          <div id="folder-grid" class="project-grid"></div>
+        </section>
+
+        <section id="folder-detail" class="view">
+          <div class="section-actions">
+            <div><h2 id="folder-title">Dossier</h2><p id="folder-subtitle">Historique complet et pièces liées.</p></div>
+            <button id="back-folders-btn" class="btn ghost">Retour dossiers</button>
+          </div>
+          <div id="folder-summary" class="metric-grid compact"></div>
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Historique du dossier</h2><p>Événements et modifications liés au dossier.</p></div>
+              <div id="folder-history" class="activity-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Pièces téléchargeables</h2><p>Documents générés, scans et justificatifs.</p></div>
+              <div id="folder-files" class="activity-list"></div>
+            </section>
+          </div>
+          <section class="panel">
+            <div class="panel-head"><h2>Opérations liées</h2><p>Factures, proformas, décaissements et achats.</p></div>
+            <div id="folder-operations" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="reports" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div><h2>Reporting temps réel</h2><p>Filtres de lecture et export opérationnel.</p></div>
+              <div class="segmented">
+                <button class="chip active" data-period="daily">Journalier</button>
+                <button class="chip" data-period="monthly">Mensuel</button>
+                <button class="chip" data-period="live">Temps réel</button>
+              </div>
+              <button class="btn ghost" data-export="reports">Exporter Excel</button>
+            </div>
+            <div id="report-charts" class="report-grid"></div>
+            <div id="report-body" class="table-wrap"></div>
+          </section>
+        </section>
+
+        <section id="settings" class="view">
+          <div class="segmented settings-tabs">
+            <button class="chip active" data-settings-tab="documents" aria-pressed="true">Documents</button>
+            <button class="chip" data-settings-tab="application" aria-pressed="false">Application</button>
+            <button class="chip" data-settings-tab="users" aria-pressed="false">Utilisateurs & autorisations</button>
+            <button class="chip" data-settings-tab="payroll" aria-pressed="false">Paie & cotisations</button>
+          </div>
+          <div data-settings-panel="documents">
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Modèle de facture</h2><p>Logo, slogan et pied de page utilisés sur les factures.</p></div>
+              <form id="settings-form" class="form-grid">
+                <label>Logo facture<input id="logo-upload" type="file" accept="image/*"></label>
+                <label>Nom affiché<input name="brandName" value="Finance OS"></label>
+                <label>Slogan<input name="tagline" value="Gestion financière et facturation"></label>
+                <label>Signataire des factures<select name="invoiceSignerEmail"></select></label>
+                <label>Signataire des proformas<select name="proformaSignerEmail"></select></label>
+                <label>Signataire des reçus<select name="receiptSignerEmail"></select></label>
+                <label>Signataire des bulletins de paie<select name="payrollSignerEmail"></select></label>
+                <label class="full">Pied de page facture<textarea name="footer" rows="5"></textarea></label>
+                <label class="full">Conditions générales proforma<textarea name="terms" rows="5"></textarea></label>
+                <button class="btn primary" type="submit">Actualiser le modèle</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Prévisualisation</h2><p>Le modèle s’applique immédiatement à l’aperçu facture.</p></div>
+              <div id="settings-preview" class="settings-preview"></div>
+            </section>
+          </div>
+          </div>
+          <div data-settings-panel="application" class="is-hidden">
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Gestion application</h2><p>Paramètres d’exploitation de Finance OS.</p></div>
+              <form class="form-grid">
+                <label>Devise principale<select><option>FCFA</option><option>EUR</option><option>USD</option></select></label>
+                <label>TVA par défaut<input value="0%"></label>
+                <label>Préfixe facture<input value="FCT"></label>
+                <label>Numérotation<select><option>Mensuelle</option><option>Annuelle</option><option>Continue</option></select></label>
+                <label class="full">Modes de paiement<input value="Espèces, Virement, Chèque, Mobile money"></label>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Utilisateurs & sécurité</h2><p>Rôles, validations et journal d’audit.</p></div>
+              <div class="settings-list">
+                <div><strong>Rôles actifs</strong><span>Admin, Manager financier, Caissier, Commercial, Auditeur</span></div>
+                <div><strong>Validation décaissement</strong><span>Requise au-delà de 100 000 CFA</span></div>
+                <div><strong>Audit log</strong><span>Paiements, modifications facture, arrêtés et scans</span></div>
+                <div><strong>Session</strong><span>Expiration automatique après 30 minutes</span></div>
+              </div>
+            </section>
+            <section class="panel full">
+              <div class="panel-head"><div><h2>Sauvegarde et version</h2><p>Protégez les données locales avant chaque mise à jour de l’application.</p></div></div>
+              <div class="settings-list backup-status-list">
+                <div><strong>Version Finance OS</strong><span id="app-version-label">1.0.0</span></div>
+                <div><strong>Schéma de données</strong><span id="data-schema-label">1</span></div>
+                <div><strong>Stockage actuel</strong><span>Navigateur local - sauvegarde requise avant mise à jour</span></div>
+              </div>
+              <div class="inline-actions backup-actions">
+                <button id="export-data-backup" class="btn primary" type="button">Télécharger une sauvegarde</button>
+                <label class="btn ghost upload-label">Restaurer une sauvegarde<input id="import-data-backup" type="file" accept="application/json,.json"></label>
+              </div>
+              <p id="backup-status" class="hint">Conservez les sauvegardes dans un emplacement sécurisé : elles contiennent les données de la société.</p>
+            </section>
+          </div>
+          </div>
+          <div data-settings-panel="users" class="is-hidden">
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Ajouter un utilisateur</h2><p>Invitation, rôle et autorisations dans la plateforme.</p></div>
+              <form id="user-form" class="form-grid">
+                <label>Nom<input name="name" value=""></label>
+                <label>Email<input name="email" type="email" value=""></label>
+                <label>Titre de signature<input name="signatureTitle" placeholder="Ex. Le Gérant"></label>
+                <label>Mot de passe initial<input name="password" type="password" value=""></label>
+                <label>Rôle<select name="role"><option>Admin</option><option>Manager financier</option><option>Caissier</option><option>Commercial</option><option>Auditeur</option></select></label>
+                <label>Statut<select name="status"><option>Actif</option><option>Invitation envoyée</option><option>Suspendu</option></select></label>
+                <fieldset class="full access-selector"><legend>Autorisations</legend><p>Les fonctionnalités recommandées sont sélectionnées selon le rôle. L’administrateur peut les ajuster.</p><div id="user-access-options"></div></fieldset>
+                <button class="btn primary full" type="submit">Ajouter l’utilisateur</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Utilisateurs</h2><p>Accès actifs sur Finance OS.</p></div>
+              <div id="users-list" class="settings-list"></div>
+            </section>
+          </div>
+          </div>
+          <div data-settings-panel="payroll" class="is-hidden">
+            <section class="panel">
+              <div class="panel-head"><h2>Règles de paie</h2><p>Valeurs par défaut modifiables par l’administrateur.</p></div>
+              <form id="payroll-settings-form" class="form-grid">
+                <label>CNSS salarié (%)<input name="cnssEmployee" type="number" step="0.01"></label>
+                <label>CNSS employeur (%)<input name="cnssEmployer" type="number" step="0.01"></label>
+                <label>AMU salarié (%)<input name="amuEmployee" type="number" step="0.01"></label>
+                <label>AMU employeur (%)<input name="amuEmployer" type="number" step="0.01"></label>
+                <label>IRPP provisoire (%)<input name="irppRate" type="number" step="0.01"></label>
+                <label>Jours ouvrés mensuels<input name="workingDays" type="number" step="1"></label>
+                <button class="btn primary full" type="submit">Enregistrer les règles</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section id="profile" class="view">
+          <div class="section-actions">
+            <div><h2>Profil utilisateur</h2><p>Identité affichée dans Finance OS.</p></div>
+          </div>
+          <div class="grid two">
+            <section class="panel">
+              <div class="panel-head"><h2>Informations personnelles</h2><p>Nom, email, biographie et photo.</p></div>
+              <form id="profile-form" class="form-grid">
+                <label>Nom complet<input name="name" value=""></label>
+                <label>Adresse email<input name="email" type="email" value=""></label>
+                <label class="full">Titre affiché sur les signatures<input name="signatureTitle" placeholder="Ex. Le Gérant, Responsable administratif"></label>
+                <label class="full">Biographie<textarea name="bio" rows="5"></textarea></label>
+                <label class="full">Photo de profil<input id="profile-photo-upload" type="file" accept="image/*"></label>
+                <button class="btn primary full" type="submit">Mettre à jour le profil</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Mot de passe</h2><p>Modifier votre mot de passe de connexion.</p></div>
+              <form id="password-form" class="form-grid">
+                <label class="full">Mot de passe actuel<input name="currentPassword" type="password" autocomplete="current-password"></label>
+                <label>Nouveau mot de passe<input name="newPassword" type="password" autocomplete="new-password"></label>
+                <label>Confirmer<input name="confirmPassword" type="password" autocomplete="new-password"></label>
+                <button class="btn primary full" type="submit">Modifier le mot de passe</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Aperçu</h2><p>Profil utilisé dans l’application.</p></div>
+              <div id="profile-preview" class="profile-preview"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Profil employé</h2><p>Situation salariale et derniers bulletins accessibles à l’utilisateur.</p></div>
+              <div id="employee-profile-summary" class="settings-list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <button id="mobile-nav-backdrop" class="mobile-nav-backdrop is-hidden" type="button" aria-label="Fermer le menu"></button>
+    <div id="client-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head">
+          <div><h2>Nouveau client</h2><p>Créer le client et l’associer à la facture en cours.</p></div>
+          <button id="close-client-modal" class="btn icon">×</button>
+        </div>
+        <form id="invoice-client-form" class="form-grid">
+          <label>Logo<input name="logo" maxlength="2" value="CL"></label>
+          <label>Logo image optionnel<input name="logoFile" type="file" accept="image/*"></label>
+          <label>Entreprise<input name="company" value=""></label>
+          <label>Personne contact<input name="person" value=""></label>
+          <label>Téléphone<input name="phone" value=""></label>
+          <label>Email<input name="email" type="email" value=""></label>
+          <label class="full">Adresse<input name="address" value=""></label>
+          <button class="btn primary full" type="submit">Créer et choisir ce client</button>
+        </form>
+      </section>
+    </div>
+    <div id="account-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head">
+          <div><h2>Nouveau compte</h2><p>Créer une caisse ou un compte bancaire.</p></div>
+          <button id="close-account-modal" class="btn icon">×</button>
+        </div>
+        <form id="account-form" class="form-grid">
+          <label>Type<select name="type"><option>Banque</option><option>Caisse</option></select></label>
+          <label>Nom du compte<input name="name" value=""></label>
+          <label>Solde initial<input name="balance" type="number" value="0"></label>
+          <label>Titulaire du compte<input name="holder" value=""></label>
+          <label>Établissement<input name="institution" value=""></label>
+          <label>Numéro de compte<input name="number" value=""></label>
+          <label>Domiciliation<input name="domiciliation" value=""></label>
+          <label>IBAN / RIB<input name="rib" value=""></label>
+          <label>SWIFT / BIC<input name="swift" value=""></label>
+          <label>Gestionnaire<input name="manager" value=""></label>
+          <label class="full">Uploader le RIP / RIB<input name="ribFile" type="file" accept=".pdf,image/*"></label>
+          <button class="btn primary full" type="submit">Ajouter le compte</button>
+        </form>
+      </section>
+    </div>
+    <div id="contact-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head">
+          <div><h2 id="contact-form-title">Nouveau client</h2><p>Créer un client ou fournisseur.</p></div>
+          <button id="close-contact-modal" class="btn icon">×</button>
+        </div>
+        <form id="contact-form" class="form-grid">
+          <label>Type<select name="type"><option value="client">Client</option><option value="supplier">Fournisseur</option></select></label>
+          <label>Logo<input name="logo" maxlength="2" value="CL"></label>
+          <label>Logo image optionnel<input name="logoFile" type="file" accept="image/*"></label>
+          <label>Entreprise<input name="company" value=""></label>
+          <label>Personne contact<input name="person" value=""></label>
+          <label>Téléphone<input name="phone" value=""></label>
+          <label>Email<input name="email" type="email" value=""></label>
+          <label class="full">Adresse<input name="address" value=""></label>
+          <button class="btn primary full" type="submit">Enregistrer le contact</button>
+        </form>
+      </section>
+    </div>
+    <div id="early-close-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head">
+          <div><h2>Arrêté anticipé</h2><p>Cette action clôture la journée et bloque les nouvelles opérations.</p></div>
+          <button id="close-early-modal" class="btn icon">×</button>
+        </div>
+        <form id="early-close-form" class="form-grid">
+          <label class="full">Cause de l’arrêté anticipé<textarea name="reason" rows="4" required placeholder="Ex. fermeture exceptionnelle, déplacement, contrôle interne..."></textarea></label>
+          <label class="full confirm-line"><input name="confirm" type="checkbox" required> Je confirme qu’aucune nouvelle opération ne pourra être saisie aujourd’hui.</label>
+          <button class="btn primary full" type="submit">Confirmer l’arrêté anticipé</button>
+        </form>
+      </section>
+    </div>
+    <div id="onboarding-modal" class="onboarding-layer is-hidden">
+      <section class="onboarding-card">
+        <div class="onboarding-kicker">Découvrir Finance OS</div>
+        <button id="onboarding-skip" class="btn icon onboarding-close" aria-label="Fermer le guide">×</button>
+        <div><h2 id="onboarding-title">Bienvenue dans Finance OS</h2><p id="onboarding-subtitle">Tour guidé de première connexion.</p></div>
+        <div id="onboarding-body" class="onboarding-body"></div>
+        <div class="onboarding-progress" id="onboarding-progress"></div>
+        <div class="inline-actions">
+          <button id="onboarding-prev" class="btn ghost">Précédent</button>
+          <button id="onboarding-next" class="btn primary">Suivant</button>
+        </div>
+      </section>
+    </div>
+    <div id="entity-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head"><div><h2>Nouvelle société</h2><p>Créez un espace financier entièrement séparé.</p></div><button id="close-entity-modal" class="btn icon">×</button></div>
+        <form id="entity-form" class="form-grid">
+          <label>Nom de la société<input name="name" required></label>
+          <label>Pays<input name="country" value="Togo"></label>
+          <label class="full">Activité<input name="sector" placeholder="Conseil, services, commerce..."></label>
+          <button class="btn primary full" type="submit">Créer et ouvrir la société</button>
+        </form>
+      </section>
+    </div>
+    <div id="purchase-order-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head"><div><h2>Nouveau bon de commande</h2><p>Formalisez la demande d’achat avant réception de la facture.</p></div><button id="close-purchase-order-modal" class="btn icon">×</button></div>
+        <form id="purchase-order-form" class="form-grid">
+          <label>Fournisseur<select name="supplier" required></select></label>
+          <div class="inline-actions"><button id="add-supplier-from-order" type="button" class="btn ghost">+ Nouveau fournisseur</button></div>
+          <label>Date<input name="date" type="date" required></label>
+          <label class="full">Objet de la commande<input name="purpose" required></label>
+          <label>Montant estimé<input name="amount" type="number" min="1" required></label>
+          <label>Dossier<input name="project" placeholder="Optionnel"></label>
+          <button class="btn primary full" type="submit">Créer le bon de commande</button>
+        </form>
+      </section>
+    </div>
+    <div id="supplier-invoice-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head"><div><h2>Facture fournisseur</h2><p>Enregistrez la dette et liez-la éventuellement à un bon de commande.</p></div><button id="close-supplier-invoice-modal" class="btn icon">×</button></div>
+        <form id="supplier-invoice-form" class="form-grid">
+          <label>Fournisseur<select name="supplier" required></select></label>
+          <div class="inline-actions"><button id="add-supplier-from-invoice" type="button" class="btn ghost">+ Nouveau fournisseur</button></div>
+          <label>Numéro de facture<input name="supplierReference" required></label>
+          <label>Bon de commande<select name="purchaseOrderId"></select></label>
+          <label>Date de facture<input name="date" type="date" required></label>
+          <label>Échéance<input name="dueDate" type="date" required></label>
+          <label>Montant TTC<input name="amount" type="number" min="1" required></label>
+          <label>Catégorie de charge<select name="category"><option>Achats et consommables</option><option>Prestations externes</option><option>Loyer et charges</option><option>Transport et missions</option><option>Communication</option><option>Autres charges</option></select></label>
+          <label>Dossier<input name="project" placeholder="Optionnel"></label>
+          <label class="full">Facture numérisée<input name="invoiceFile" type="file" accept=".pdf,image/*" required></label>
+          <button class="btn primary full" type="submit">Enregistrer la facture et la dette</button>
+        </form>
+      </section>
+    </div>
+    <div id="employee-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head"><div><h2 id="employee-modal-title">Nouvel employé</h2><p id="employee-modal-subtitle">Créez le dossier salarié et associez éventuellement son compte utilisateur.</p></div><button id="close-employee-modal" class="btn icon">×</button></div>
+        <form id="employee-form" class="form-grid">
+          <label>Titre / civilité<select name="title"><option value="">Non renseigné</option><option>M.</option><option>Mme</option><option>Mlle</option><option>Dr</option></select></label>
+          <label>Nom complet<input name="name" required></label>
+          <label>Email professionnel<input name="email" type="email"></label>
+          <label>Téléphone<input name="phone" type="tel"></label>
+          <label>Date de naissance<input name="birthDate" type="date"></label>
+          <label>Pièce d’identité<input name="nationalId" placeholder="Type et numéro"></label>
+          <label class="full">Adresse<input name="address"></label>
+          <label>Poste<input name="position" required></label>
+          <label>Département / service<input name="department"></label>
+          <label>Type de contrat<select name="contractType"><option>CDI</option><option>CDD</option><option>Stage</option><option>Apprentissage</option></select></label>
+          <label>Référence du contrat<input name="contractReference"></label>
+          <label>Date d’entrée<input name="startDate" type="date" required></label>
+          <label>Date de fin prévue<input name="endDate" type="date"></label>
+          <label>Salaire de base<input name="baseSalary" type="number" min="0" required></label>
+          <label>Primes fixes<input name="allowances" type="number" min="0" value="0"></label>
+          <label>Numéro CNSS<input name="cnssNumber"></label>
+          <label>Banque<input name="bankName"></label>
+          <label class="full">RIB / IBAN<input name="rib"></label>
+          <label class="full">Contrat / projet de contrat<input name="contractDraftFile" type="file" accept=".pdf,image/*"><small id="employee-contract-draft-hint" class="hint">Version de référence, facultative.</small></label>
+          <label class="full">Contrat signé<input name="contractFile" type="file" accept=".pdf,image/*"><small id="employee-contract-file-hint" class="hint">PDF ou scan signé, facultatif.</small></label>
+          <button id="employee-submit-btn" class="btn primary full" type="submit">Enregistrer l’employé</button>
+        </form>
+      </section>
+    </div>
+    <div id="employee-end-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card compact-modal">
+        <div class="panel-head"><div><h2>Mettre fin au contrat</h2><p>L’historique du salarié et ses bulletins seront conservés.</p></div><button id="close-employee-end-modal" class="btn icon">×</button></div>
+        <form id="employee-end-form" class="form-grid">
+          <label>Date de fin effective<input name="endDate" type="date" required></label>
+          <label>Motif<select name="endReasonType"><option>Fin de CDD</option><option>Démission</option><option>Licenciement</option><option>Rupture conventionnelle</option><option>Fin de stage</option><option>Autre</option></select></label>
+          <label class="full">Précisions<textarea name="endReason" rows="4" required></textarea></label>
+          <button class="btn danger full" type="submit">Confirmer la fin du contrat</button>
+        </form>
+      </section>
+    </div>
+    <script src="./vendor/pdf-lib.min.js"></script>
+    <script src="./app.js?v=29"></script>
+  </body>
+</html>
