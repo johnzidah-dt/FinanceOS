@@ -13,6 +13,13 @@ permissions:
 
 jobs:
   container:
+    strategy:
+      matrix:
+        include:
+          - context: .
+            suffix: ""
+          - context: ./server
+            suffix: "-api"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,22 +46,18 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and publish
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
-            VCS_REF=${{ github.sha }}
-            SOURCE_URL=https://github.com/${{ github.repository }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
