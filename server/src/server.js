@@ -10,8 +10,6 @@ const { Pool } = pg;
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-secret-before-production";
 const DATABASE_URL = process.env.DATABASE_URL || "postgres://financeos:financeos@db:5432/financeos";
-const DEFAULT_EMAIL = process.env.INITIAL_ADMIN_EMAIL || "admin@demo.local";
-const DEFAULT_PASSWORD = process.env.INITIAL_ADMIN_PASSWORD || "demo1234";
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 const fullAccess = "dashboard,invoices,proformas,contacts,purchases,payroll,payments,cashdesk,dailyops,accounts,folders,reports,settings,profile";
@@ -20,21 +18,20 @@ function slugify(value) {
   return String(value || "societe").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "societe";
 }
 
-function defaultSettings() {
+function defaultSettings(signerEmail = "") {
   return {
     logoDataUrl: "",
     brandName: "Finance OS",
     tagline: "Gestion financière et facturation",
-    signers: { invoice: DEFAULT_EMAIL, proforma: DEFAULT_EMAIL, receipt: DEFAULT_EMAIL, payroll: DEFAULT_EMAIL },
+    signers: { invoice: signerEmail, proforma: signerEmail, receipt: signerEmail, payroll: signerEmail },
     payrollRules: { cnssEmployee: 4, cnssEmployer: 17.5, amuEmployee: 5, amuEmployer: 5, irppRate: 0, workingDays: 22 },
     footer: "Finance OS\nFacturation - Paiements - Caisse - Banque",
     terms: "Validité de l’offre : 15 jours.\nDémarrage après validation écrite."
   };
 }
 
-function blankState(entityId = "acceleratt", entityName = "Acceleratt Group SARL", country = "Togo", signerEmail = DEFAULT_EMAIL) {
-  const settings = defaultSettings();
-  Object.keys(settings.signers).forEach(kind => { settings.signers[kind] = signerEmail; });
+function blankState(entityId, entityName, country = "Togo", signerEmail = "") {
+  const settings = defaultSettings(signerEmail);
   return {
     dataSchemaVersion: 2,
     dayClosedByEntity: {},
@@ -74,29 +71,6 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS workspace_members_user_idx ON workspace_members(user_id);
     INSERT INTO schema_migrations(version) VALUES (1) ON CONFLICT DO NOTHING;
   `);
-}
-
-async function seed() {
-  const exists = await pool.query("SELECT 1 FROM users WHERE lower(email)=lower($1)", [DEFAULT_EMAIL]);
-  if (exists.rowCount) return;
-  const workspaceId = crypto.randomUUID();
-  const userId = crypto.randomUUID();
-  const entityId = "acceleratt";
-  const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("INSERT INTO workspaces(id,name) VALUES($1,$2)", [workspaceId, "FinanceOS"]);
-    await client.query("INSERT INTO users(id,email,password_hash,name,signature_title) VALUES($1,$2,$3,$4,$5)", [userId, DEFAULT_EMAIL, passwordHash, "Admin Finance", "Le Responsable administratif et financier"]);
-    await client.query("INSERT INTO workspace_members(workspace_id,user_id,role,access,entity_ids) VALUES($1,$2,$3,$4,$5)", [workspaceId, userId, "Admin", fullAccess, JSON.stringify([entityId])]);
-    await client.query("INSERT INTO workspace_state(workspace_id,data,updated_by) VALUES($1,$2,$3)", [workspaceId, blankState(entityId), userId]);
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
 }
 
 function signToken(userId, workspaceId) {
@@ -319,5 +293,4 @@ server.on("upgrade", (request, socket, head) => {
 });
 
 await migrate();
-await seed();
 server.listen(PORT, "0.0.0.0", () => console.log(`FinanceOS API listening on ${PORT}`));

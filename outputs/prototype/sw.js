@@ -1,5 +1,5 @@
-const CACHE = "financeos-shell-v2";
-const SHELL = ["/", "/index.html", "/styles.css?v=26", "/app.js?v=30", "/manifest.webmanifest", "/icons/financeos-icon.svg", "/vendor/pdf-lib.min.js"];
+const CACHE = "financeos-shell-v2.0.1";
+const SHELL = ["/", "/index.html", "/styles.css?v=27", "/app.js?v=31", "/manifest.webmanifest", "/icons/financeos-icon.svg", "/vendor/pdf-lib.min.js"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

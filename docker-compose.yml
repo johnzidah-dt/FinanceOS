@@ -19,15 +19,13 @@ services:
       - no-new-privileges:true
 
   api:
-    image: ${FINANCE_OS_API_IMAGE:-finance-os-api}:${FINANCE_OS_VERSION:-2.0.0}
+    image: ${FINANCE_OS_API_IMAGE:-finance-os-api}:${FINANCE_OS_VERSION:-2.0.1}
     build:
       context: ./server
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-financeos}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-financeos}
       JWT_SECRET: ${JWT_SECRET:-change-this-secret-before-production}
-      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@demo.local}
-      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-demo1234}
     depends_on:
       db:
         condition: service_healthy
@@ -41,11 +39,11 @@ services:
       - no-new-privileges:true
 
   finance-os:
-    image: ${FINANCE_OS_IMAGE:-finance-os}:${FINANCE_OS_VERSION:-2.0.0}
+    image: ${FINANCE_OS_IMAGE:-finance-os}:${FINANCE_OS_VERSION:-2.0.1}
     build:
       context: .
       args:
-        APP_VERSION: ${FINANCE_OS_VERSION:-2.0.0}
+        APP_VERSION: ${FINANCE_OS_VERSION:-2.0.1}
         VCS_REF: ${VCS_REF:-local}
         SOURCE_URL: ${SOURCE_URL:-local}
     restart: unless-stopped

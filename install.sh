@@ -62,6 +62,22 @@ fetch_source() {
 
 random_secret() { openssl rand -hex "$1"; }
 
+backup_database() {
+  [ -d "$INSTALL_DIR/.git" ] || return
+  [ -f "$INSTALL_DIR/docker-compose.yml" ] || return
+  if ! docker compose -f "$INSTALL_DIR/docker-compose.yml" ps --status running db 2>/dev/null | grep -q db; then return; fi
+  local backup_dir backup_file
+  backup_dir="$INSTALL_DIR/backups"
+  backup_file="$backup_dir/financeos-pre-update-$(date +%Y%m%d-%H%M%S).dump"
+  mkdir -p "$backup_dir"
+  info "Sauvegarde de la base avant mise à jour..."
+  if ! docker compose -f "$INSTALL_DIR/docker-compose.yml" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_file"; then
+    rm -f "$backup_file"
+    fail "La sauvegarde PostgreSQL a échoué. La mise à jour est annulée."
+  fi
+  info "Sauvegarde créée : $backup_file"
+}
+
 configure_environment() {
   cd "$INSTALL_DIR"
   if [ -f .env ]; then
@@ -70,29 +86,26 @@ configure_environment() {
     current_version=$(cat VERSION)
     sed -i "s/^FINANCE_OS_VERSION=.*/FINANCE_OS_VERSION=$current_version/" .env
     sed -i "s/^FINANCE_OS_PORT=.*/FINANCE_OS_PORT=$PORT/" .env
+    sed -i '/^INITIAL_ADMIN_EMAIL=/d; /^INITIAL_ADMIN_PASSWORD=/d' .env
     return
   fi
 
-  local database_password jwt_secret initial_password
+  local database_password jwt_secret current_version
   database_password=$(random_secret 24)
   jwt_secret=$(random_secret 48)
-  initial_password="${FINANCEOS_ADMIN_PASSWORD:-$(random_secret 8)}"
+  current_version=$(cat VERSION)
 
   cat > .env <<EOF
 FINANCE_OS_IMAGE=finance-os
 FINANCE_OS_API_IMAGE=finance-os-api
-FINANCE_OS_VERSION=2.0.0
+FINANCE_OS_VERSION=$current_version
 FINANCE_OS_PORT=$PORT
 POSTGRES_DB=financeos
 POSTGRES_USER=financeos
 POSTGRES_PASSWORD=$database_password
 JWT_SECRET=$jwt_secret
-INITIAL_ADMIN_EMAIL=${FINANCEOS_ADMIN_EMAIL:-admin@demo.local}
-INITIAL_ADMIN_PASSWORD=$initial_password
 EOF
   chmod 600 .env
-  printf '%s\n' "$initial_password" > .initial-admin-password
-  chmod 600 .initial-admin-password
 }
 
 deploy() {
@@ -111,24 +124,21 @@ deploy() {
 }
 
 main() {
-  info "Installation de FinanceOS 2.0.0"
+  info "Installation ou mise à jour de FinanceOS"
   install_base_packages
   install_docker
+  backup_database
   fetch_source
   configure_environment
   deploy
 
-  local address admin password
+  local address
   address=$(hostname -I 2>/dev/null | awk '{print $1}')
-  admin=$(sed -n 's/^INITIAL_ADMIN_EMAIL=//p' "$INSTALL_DIR/.env")
-  password=$(cat "$INSTALL_DIR/.initial-admin-password" 2>/dev/null || printf '%s' "mot de passe déjà modifié")
   printf '\n\033[1;32mFinanceOS est opérationnel.\033[0m\n'
   printf 'Adresse : http://%s:%s\n' "${address:-IP_DU_SERVEUR}" "$PORT"
-  printf 'Compte : %s\n' "$admin"
-  printf 'Mot de passe initial : %s\n' "$password"
+  printf 'Première installation : ouvrez cette adresse, puis créez le premier compte et la première société.\n'
   printf 'Dossier : %s\n' "$INSTALL_DIR"
   printf '\nConfigurez ensuite un domaine HTTPS pour activer l’installation PWA sur les appareils distants.\n'
-  rm -f "$INSTALL_DIR/.initial-admin-password"
 }
 
 main "$@"

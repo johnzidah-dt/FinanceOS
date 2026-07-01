@@ -1,4 +1,4 @@
-# Installation de FinanceOS 2.0.0 sur Proxmox
+# Installation de FinanceOS 2.0.1 sur Proxmox
 
 ## Architecture recommandée
 
@@ -16,7 +16,7 @@ Dans la console `root` de la VM ou du LXC :
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/johnzidah-dt/FinanceOS/main/install.sh)"
 ```
 
-Cette commande peut être relancée pour mettre FinanceOS à jour. Elle conserve les secrets, la configuration et le volume PostgreSQL.
+Cette commande peut être relancée pour mettre FinanceOS à jour. Elle conserve les secrets et le volume PostgreSQL, et crée d’abord une sauvegarde datée dans `/opt/financeos/backups`.
 
 ### Installation manuelle
 

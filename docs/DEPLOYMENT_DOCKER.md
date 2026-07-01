@@ -1,4 +1,4 @@
-# Déploiement Docker - FinanceOS 2.0.0
+# Déploiement Docker - FinanceOS 2.0.1
 
 ## Prérequis
 
@@ -23,7 +23,6 @@ Dans `.env`, remplacez au minimum :
 ```dotenv
 POSTGRES_PASSWORD=mot-de-passe-long-et-unique
 JWT_SECRET=secret-aleatoire-de-64-caracteres-ou-plus
-INITIAL_ADMIN_PASSWORD=mot-de-passe-administrateur
 ```
 
 ## HTTPS et PWA

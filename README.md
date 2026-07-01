@@ -4,7 +4,7 @@ FinanceOS centralise la facturation, les paiements, les caisses et banques, les 
 
 ## Version
 
-Version actuelle : **2.0.0**.
+Version actuelle : **2.0.1**.
 
 Cette version est multi-utilisateur : les données sont enregistrées dans PostgreSQL et synchronisées entre les navigateurs connectés au même espace FinanceOS. Le stockage du navigateur n'est plus la source principale.
 
@@ -26,7 +26,7 @@ Sur une VM ou un LXC Debian/Ubuntu exécuté en tant que `root` :
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/johnzidah-dt/FinanceOS/main/install.sh)"
 ```
 
-La commande installe Docker si nécessaire, génère les secrets, démarre les trois services et affiche l'adresse ainsi que le mot de passe administrateur initial. Relancer la même commande met à jour FinanceOS en conservant `.env` et PostgreSQL.
+La commande installe Docker si nécessaire, génère les secrets et démarre les trois services. À la première ouverture, le premier utilisateur crée son compte administrateur et sa première société. Relancer la même commande met à jour FinanceOS en conservant `.env` et PostgreSQL.
 
 Pour un dépôt GitHub privé :
 
@@ -39,19 +39,14 @@ curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" https://raw.githubuserconten
 
 ```bash
 cp .env.example .env
-# Modifier obligatoirement POSTGRES_PASSWORD, JWT_SECRET et INITIAL_ADMIN_PASSWORD
+# Modifier obligatoirement POSTGRES_PASSWORD et JWT_SECRET
 docker compose up -d --build
 docker compose ps
 ```
 
 Ouvrez `http://localhost:8080`. Pour une installation sur un serveur ou un mobile, configurez un domaine HTTPS afin que l'installation PWA soit proposée correctement.
 
-Accès initial de développement :
-
-```text
-admin@demo.local
-demo1234
-```
+Aucun compte par défaut n’est créé. Le formulaire d’inscription initialise le premier espace de travail.
 
 ## Persistance et mises à jour
 
@@ -62,8 +57,14 @@ Avant chaque mise à jour :
 ```bash
 mkdir -p backups
 docker compose exec -T db pg_dump -U financeos -d financeos -Fc > backups/financeos-$(date +%F-%H%M).dump
-docker compose pull
-docker compose up -d
+git pull --ff-only
+docker compose up -d --build
+```
+
+L’installateur automatique réalise lui-même une sauvegarde datée dans `/opt/financeos/backups` avant de télécharger une nouvelle version. Pour mettre à jour une installation existante :
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/johnzidah-dt/FinanceOS/main/install.sh)"
 ```
 
 N'exécutez jamais `docker compose down -v` en production : l'option `-v` supprime le volume PostgreSQL.

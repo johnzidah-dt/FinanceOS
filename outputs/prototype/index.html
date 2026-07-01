@@ -10,7 +10,7 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/financeos-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icons/financeos-icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=26">
+    <link rel="stylesheet" href="./styles.css?v=27">
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -89,7 +89,7 @@
           </div>
           <div class="search-box">⌕ <input id="global-search" placeholder="Rechercher facture, client, paiement..."></div>
           <div class="top-actions">
-            <span id="sync-status" class="sync-status" title="Données synchronisées">●</span>
+            <span id="sync-status" class="sync-status" title="Données synchronisées">Enregistré</span>
             <span class="pill danger" id="risk-pill">0 créance critique</span>
             <button id="install-app-btn" class="btn ghost is-hidden" type="button">Installer</button>
             <button id="profile-btn" class="btn ghost">Profil</button>
@@ -343,6 +343,11 @@
 
         <section id="cashdesk" class="view">
           <div class="section-actions"><div><h2>Caisse et décaissements</h2><p>Les sorties sont exclusivement créées à partir d’une fiche de décaissement.</p></div></div>
+          <section class="cash-operation-guide" aria-label="Fonctionnement des opérations de caisse">
+            <div><strong>Entrées</strong><span>Apports, remboursements et autres encaissements hors factures clients.</span></div>
+            <div><strong>Transferts</strong><span>Mouvements internes entre deux caisses ou comptes bancaires.</span></div>
+            <div><strong>Décaissements</strong><span>Toute sortie : fournisseur, salaire, charge sociale ou dépense de fonctionnement.</span></div>
+          </section>
           <div class="segmented cash-tabs">
             <button class="chip active" data-cash-tab="journal" aria-pressed="true">Journal</button>
             <button class="chip" data-cash-tab="operations" aria-pressed="false">Entrées & transferts</button>
@@ -362,7 +367,7 @@
             <form id="disbursement-form" class="form-grid"></form>
           </section>
           <section class="panel">
-            <div class="panel-head"><div><h2>Suivi des décaissements</h2><p>Factures liées, moyens de règlement et scans signés.</p></div></div>
+              <div class="panel-head"><div><h2>Suivi des décaissements</h2><p>Catégories, pièces liées, moyens de règlement et scans signés.</p></div></div>
             <div id="disbursement-table" class="table-wrap"></div>
           </section>
           <section class="voucher-print panel">
@@ -543,7 +548,7 @@
             <section class="panel full">
               <div class="panel-head"><div><h2>Sauvegarde et version</h2><p>Export complémentaire des données centralisées de l’espace courant.</p></div></div>
               <div class="settings-list backup-status-list">
-                <div><strong>Version Finance OS</strong><span id="app-version-label">2.0.0</span></div>
+                <div><strong>Version Finance OS</strong><span id="app-version-label">2.0.1</span></div>
                 <div><strong>Schéma de données</strong><span id="data-schema-label">2</span></div>
                 <div><strong>Stockage actuel</strong><span>PostgreSQL centralisé - cache navigateur secondaire</span></div>
               </div>
@@ -798,6 +803,6 @@
       </section>
     </div>
     <script src="./vendor/pdf-lib.min.js"></script>
-    <script src="./app.js?v=30"></script>
+    <script src="./app.js?v=31"></script>
   </body>
 </html>

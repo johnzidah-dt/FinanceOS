@@ -25,8 +25,32 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .is-hidden { display: none !important; }
-.sync-status { color: #19a463; font-size: 11px; line-height: 1; }
-.sync-status.sync-error { color: #d83a34; }
+.sync-status {
+  color: #157a4b;
+  background: #eaf8f0;
+  border: 1px solid #c7ead6;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+.sync-status.sync-saving { color: #74570a; background: #fff7dc; border-color: #f0dea2; }
+.sync-status.sync-error { color: #a82631; background: #fff0f1; border-color: #f0c8cc; }
+.cash-operation-guide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--line);
+}
+.cash-operation-guide div { display: grid; gap: 5px; padding: 14px 16px; background: #fff; }
+.cash-operation-guide strong { font-size: 12px; }
+.cash-operation-guide span { color: var(--muted); font-size: 11px; line-height: 1.4; }
 
 .login-screen {
   min-height: 100vh;
@@ -526,7 +550,7 @@ textarea { resize: vertical; }
   justify-content: flex-start;
   margin-bottom: 48px;
 }
-.invoice-logo-img { max-width: 210px; max-height: 54px; object-fit: contain; }
+.invoice-logo-img { max-width: 250px; max-height: 70px; object-fit: contain; object-position: left center; }
 .logo-text { font-size: 34px; font-weight: 900; color: #142334; }
 .logo-dot { display: inline-block; width: 18px; height: 18px; background: var(--red); border-radius: 50%; margin-left: 4px; }
 .logo-placeholder {
@@ -1069,6 +1093,7 @@ textarea { resize: vertical; }
   .closure-report-meta, .closure-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .cash-operation-guide { grid-template-columns: 1fr; }
   .login-screen, .app-shell { grid-template-columns: 1fr; }
   .login-screen { padding: 18px; gap: 18px; }
   .login-art { padding: 26px; }

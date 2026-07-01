@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.1 - 2026-07-01
+
+- Suppression du compte et de la société de démonstration : la première ouverture crée désormais le premier administrateur et sa société.
+- Correction des faux conflits de synchronisation provoqués par plusieurs sauvegardes simultanées du même navigateur.
+- Ajout d’un indicateur visible « Enregistrement / Enregistré / Non synchronisé ».
+- Ajout des décaissements de salaires avec règlement automatique de la dette salariale.
+- Ajout des règlements CNSS, AMU et autres charges sociales avec période et justificatif téléchargeable.
+- Classement des décaissements par nature : fournisseur, salaire, charges, prestataire, freelance, partenaire, achats, avantages et fonctionnement.
+- Correction des mentions d’arrêté sur les factures et proformas.
+- Agrandissement et alignement à gauche du logo sur les documents PDF.
+- Correction des espacements des bulletins de paie et des synthèses qui chevauchaient les tableaux.
+- Correction des erreurs de réinitialisation de formulaires après une opération serveur.
+
 ## 2.0.0 - 2026-06-30
 
 - Ajout de PostgreSQL comme stockage central partagé.
