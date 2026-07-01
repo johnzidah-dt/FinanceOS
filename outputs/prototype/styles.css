@@ -25,6 +25,8 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .is-hidden { display: none !important; }
+.sync-status { color: #19a463; font-size: 11px; line-height: 1; }
+.sync-status.sync-error { color: #d83a34; }
 
 .login-screen {
   min-height: 100vh;

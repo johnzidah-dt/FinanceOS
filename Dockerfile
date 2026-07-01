@@ -1,6 +1,6 @@
 FROM nginx:1.28-alpine
 
-ARG APP_VERSION=1.0.0
+ARG APP_VERSION=2.0.0
 ARG VCS_REF=unknown
 ARG SOURCE_URL=local
 

@@ -8,24 +8,24 @@ Depuis la racine du projet :
 
 ```bash
 gh auth login
-gh repo create finance-os --private --source=. --remote=origin --push
-git push origin v1.0.0
+gh repo create FinanceOS --private --source=. --remote=origin --push
+git push origin v2.0.0
 ```
 
 ## Avec un dépôt créé depuis le site GitHub
 
-Créez un dépôt privé vide nommé `finance-os`, sans README ni licence, puis exécutez :
+Créez un dépôt privé vide nommé `FinanceOS`, sans README ni licence, puis exécutez :
 
 ```bash
-git remote add origin git@github.com:PROPRIETAIRE/finance-os.git
+git remote add origin git@github.com:PROPRIETAIRE/FinanceOS.git
 git push -u origin main
-git push origin v1.0.0
+git push origin v2.0.0
 ```
 
 Depuis le workspace préparé par Codex, dont les métadonnées Git sont séparées, utilisez directement :
 
 ```bash
-sh scripts/publish-github.sh git@github.com:PROPRIETAIRE/finance-os.git
+sh scripts/publish-github.sh git@github.com:PROPRIETAIRE/FinanceOS.git
 ```
 
 ## Après publication
@@ -36,4 +36,4 @@ sh scripts/publish-github.sh git@github.com:PROPRIETAIRE/finance-os.git
 4. Activez Dependabot pour les actions GitHub.
 5. Publiez les versions avec des tags immuables `vMAJEUR.MINEUR.CORRECTIF`.
 
-Le workflow `.github/workflows/container.yml` construit l'image et la publie dans `ghcr.io/PROPRIETAIRE/finance-os`.
+Le workflow `.github/workflows/container.yml` construit l'interface et l'API, puis publie `ghcr.io/PROPRIETAIRE/financeos` et `ghcr.io/PROPRIETAIRE/financeos-api`.

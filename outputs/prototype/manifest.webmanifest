@@ -1,0 +1,16 @@
+{
+  "name": "FinanceOS",
+  "short_name": "FinanceOS",
+  "description": "Facturation, trésorerie, achats, dossiers et paie.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1c1c1c",
+  "lang": "fr",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "/icons/financeos-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

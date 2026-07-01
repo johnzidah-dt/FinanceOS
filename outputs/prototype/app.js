@@ -1,10 +1,22 @@
 const DEFAULT_EMAIL = "admin@demo.local";
-const DEFAULT_PASSWORD = "demo1234";
-const APP_VERSION = "1.0.0";
-const DATA_SCHEMA_VERSION = 1;
+const APP_VERSION = "2.0.0";
+const DATA_SCHEMA_VERSION = 2;
 const currentDate = new Date();
 const today = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
 const STORAGE_KEY = "finance-os-prototype-v17";
+const TOKEN_KEY = "finance-os-session";
+const CLIENT_ID = globalThis.crypto?.randomUUID?.() || `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const SHARED_KEYS = [
+  "dataSchemaVersion", "dayClosedByEntity", "settings", "entities", "contacts", "invoices", "proformas",
+  "payments", "receipts", "purchaseOrders", "supplierInvoices", "accountingEntries", "employees",
+  "payrollRecords", "accounts", "cashOperations", "disbursements", "closures", "statements", "projects"
+];
+let authToken = sessionStorage.getItem(TOKEN_KEY) || "";
+let serverRevision = 0;
+let lastSyncedState = "";
+let syncTimer = null;
+let syncSocket = null;
+let applyingRemoteState = false;
 
 const state = {
   dataSchemaVersion: DATA_SCHEMA_VERSION,
@@ -60,7 +72,7 @@ const state = {
   disbursements: [],
   closures: [],
   users: [
-    { entityIds: ["acceleratt"], name: "Admin Finance", email: DEFAULT_EMAIL, password: DEFAULT_PASSWORD, signatureTitle: "Le Responsable administratif et financier", role: "Admin", status: "Actif", onboardingSeen: false, access: "dashboard,invoices,proformas,contacts,purchases,payroll,payments,cashdesk,dailyops,accounts,folders,reports,settings,profile" }
+    { entityIds: ["acceleratt"], name: "Admin Finance", email: DEFAULT_EMAIL, signatureTitle: "Le Responsable administratif et financier", role: "Admin", status: "Actif", onboardingSeen: false, access: "dashboard,invoices,proformas,contacts,purchases,payroll,payments,cashdesk,dailyops,accounts,folders,reports,settings,profile" }
   ],
   statements: [],
   projects: []
@@ -257,7 +269,11 @@ function ensureEntitySettings(entity = currentEntity()) {
   return entity?.settings || state.settings;
 }
 
-function persistState() {
+function sharedState() {
+  return Object.fromEntries(SHARED_KEYS.map(key => [key, state[key]]));
+}
+
+function cacheState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       ...state,
@@ -270,11 +286,98 @@ function persistState() {
   }
 }
 
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...(options.headers || {}) }
+  });
+  const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.error || "Le serveur FinanceOS est indisponible.");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function applyServerPayload(payload, authenticated = state.authenticated) {
+  applyingRemoteState = true;
+  Object.assign(state, payload.state || {});
+  state.users = payload.users || state.users;
+  state.authenticated = authenticated;
+  if (payload.user) {
+    state.currentUserEmail = payload.user.email;
+    state.profile = { name: payload.user.name, email: payload.user.email, signatureTitle: payload.user.signatureTitle || payload.user.role, bio: payload.user.bio || "", photoDataUrl: payload.user.photoDataUrl || "" };
+    state.currentEntityId = userEntityIds(payload.user)[0] || state.currentEntityId;
+  }
+  serverRevision = Number(payload.revision) || serverRevision;
+  lastSyncedState = JSON.stringify(sharedState());
+  state.entities.forEach(ensureEntitySettings);
+  applyingRemoteState = false;
+  cacheState();
+}
+
+function scheduleRemoteSave() {
+  if (!state.authenticated || !authToken || applyingRemoteState) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncRemoteState, 350);
+}
+
+async function syncRemoteState() {
+  const snapshot = JSON.stringify(sharedState());
+  if (snapshot === lastSyncedState) return;
+  try {
+    const result = await apiRequest("/api/state", { method: "PUT", body: JSON.stringify({ state: JSON.parse(snapshot), baseState: lastSyncedState ? JSON.parse(lastSyncedState) : null, revision: serverRevision, schemaVersion: DATA_SCHEMA_VERSION, sourceId: CLIENT_ID }) });
+    if (result.state) applyServerPayload({ ...result, users: state.users }, true);
+    else {
+      serverRevision = result.revision;
+      lastSyncedState = snapshot;
+    }
+    byId("sync-status")?.classList.remove("sync-error");
+  } catch (error) {
+    if (error.status === 409 && error.payload?.state) {
+      applyServerPayload(error.payload, true);
+      renderAll();
+      alert("Un autre utilisateur a modifié les données au même moment. FinanceOS a chargé la version la plus récente afin d’éviter un écrasement.");
+      return;
+    }
+    byId("sync-status")?.classList.add("sync-error");
+    console.error(error);
+  }
+}
+
+function persistState() {
+  cacheState();
+  scheduleRemoteSave();
+}
+
+function connectRealtime() {
+  syncSocket?.close();
+  if (!authToken) return;
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  syncSocket = new WebSocket(`${protocol}//${location.host}/ws?token=${encodeURIComponent(authToken)}`);
+  syncSocket.addEventListener("open", () => byId("sync-status")?.classList.remove("sync-error"));
+  syncSocket.addEventListener("message", async event => {
+    const message = JSON.parse(event.data || "{}");
+    if (message.type !== "state-updated" || message.sourceId === CLIENT_ID || message.revision <= serverRevision) return;
+    try {
+      const payload = await apiRequest("/api/state");
+      applyServerPayload(payload, true);
+      renderAll();
+    } catch (error) { console.error(error); }
+  });
+  syncSocket.addEventListener("close", () => {
+    if (state.authenticated) setTimeout(connectRealtime, 3000);
+  });
+}
+
 function migrateSavedData(saved) {
   const migrated = JSON.parse(JSON.stringify(saved));
   const sourceVersion = Number(migrated.dataSchemaVersion) || 0;
   if (sourceVersion > DATA_SCHEMA_VERSION) throw new Error("Cette sauvegarde a été créée par une version plus récente de Finance OS.");
   if (sourceVersion < 1) migrated.dataSchemaVersion = 1;
+  if (sourceVersion < 2) migrated.dataSchemaVersion = 2;
   return migrated;
 }
 
@@ -343,9 +446,15 @@ function importDataBackup(event) {
       const payload = JSON.parse(reader.result);
       if (payload?.format !== "finance-os-backup" || !payload.data || !Array.isArray(payload.data.entities) || !Array.isArray(payload.data.users)) throw new Error("Format de sauvegarde invalide.");
       const restored = migrateSavedData(payload.data);
-      if (!confirm(`Restaurer la sauvegarde du ${new Date(payload.exportedAt || file.lastModified).toLocaleString("fr-FR")} ? Les données actuellement présentes dans ce navigateur seront remplacées.`)) return;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...restored, authenticated: false, onboardingStep: 0 }));
-      location.reload();
+      if (!confirm(`Restaurer la sauvegarde du ${new Date(payload.exportedAt || file.lastModified).toLocaleString("fr-FR")} ? Les données partagées de cet espace FinanceOS seront remplacées pour tous les utilisateurs.`)) return;
+      if (state.authenticated && authToken) {
+        Object.assign(state, Object.fromEntries(SHARED_KEYS.filter(key => key in restored).map(key => [key, restored[key]])));
+        lastSyncedState = "";
+        syncRemoteState().then(() => location.reload()).catch(error => { byId("backup-status").textContent = error.message; });
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...restored, authenticated: false, onboardingStep: 0 }));
+        location.reload();
+      }
     } catch (error) {
       byId("backup-status").textContent = error.message || "Impossible de restaurer cette sauvegarde.";
     } finally {
@@ -368,26 +477,25 @@ function toggleAuthMode(register) {
   byId("register-form").classList.toggle("is-hidden", !register);
 }
 
-function registerOrganization(event) {
+async function registerOrganization(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
-  if (state.users.some(user => user.email.toLowerCase() === data.email.toLowerCase())) {
-    byId("register-error").textContent = "Un compte existe déjà avec cette adresse email.";
-    return;
+  byId("register-error").textContent = "Création de l’espace en cours…";
+  try {
+    const payload = await apiRequest("/api/auth/register", { method: "POST", body: JSON.stringify(data) });
+    authToken = payload.token;
+    sessionStorage.setItem(TOKEN_KEY, authToken);
+    applyServerPayload(payload, true);
+    byId("login-screen").classList.add("is-hidden");
+    byId("app-shell").classList.remove("is-hidden");
+    byId("register-error").textContent = "";
+    event.currentTarget.reset();
+    connectRealtime();
+    renderAll();
+    openOnboarding();
+  } catch (error) {
+    byId("register-error").textContent = error.message;
   }
-  const entity = { id: entityIdFromName(data.organization), name: data.organization, sector: "À configurer", country: data.country || "Togo", settings: cloneDefaultSettings() };
-  const user = { entityIds: [entity.id], name: data.name, email: data.email, password: data.password, signatureTitle: "Le Gérant", role: "Admin", status: "Actif", onboardingSeen: false, access: roleAccess("Admin") };
-  state.entities.push(entity);
-  state.users.push(user);
-  state.currentEntityId = entity.id;
-  state.currentUserEmail = user.email;
-  state.profile = { name: user.name, email: user.email, bio: "", photoDataUrl: "" };
-  state.authenticated = true;
-  byId("login-screen").classList.add("is-hidden");
-  byId("app-shell").classList.remove("is-hidden");
-  event.currentTarget.reset();
-  renderAll();
-  openOnboarding();
 }
 
 function renderEntitySwitcher() {
@@ -397,6 +505,7 @@ function renderEntitySwitcher() {
   ensureEntitySettings(entity);
   byId("entity-small-label").textContent = entity?.name || "Aucune société";
   byId("entity-select").innerHTML = entities.map(item => `<option value="${item.id}" ${item.id === state.currentEntityId ? "selected" : ""}>${item.name}</option>`).join("");
+  byId("add-entity-btn").classList.toggle("is-hidden", currentUser()?.role !== "Admin");
 }
 
 function switchEntity(entityId) {
@@ -432,6 +541,7 @@ function addEntity(event) {
   event.currentTarget.reset();
   closeEntityModal();
   switchEntity(entity.id);
+  apiRequest("/api/profile/entities", { method: "PATCH", body: JSON.stringify({ entityIds: user.entityIds }) }).catch(error => alert(error.message));
 }
 
 function toggleMobileMenu() {
@@ -447,7 +557,7 @@ function closeMobileMenu() {
   byId("mobile-menu-btn").setAttribute("aria-expanded", "false");
 }
 
-function init() {
+async function init() {
   restoreState();
   byId("app-version-label").textContent = APP_VERSION;
   byId("data-schema-label").textContent = DATA_SCHEMA_VERSION;
@@ -459,34 +569,51 @@ function init() {
   byId("settings-form").terms.value = settings.terms;
   bindEvents();
   renderAll();
+  if (authToken) {
+    try {
+      const payload = await apiRequest("/api/state");
+      applyServerPayload(payload, true);
+      byId("login-screen").classList.add("is-hidden");
+      byId("app-shell").classList.remove("is-hidden");
+      connectRealtime();
+      renderAll();
+    } catch (_) {
+      authToken = "";
+      sessionStorage.removeItem(TOKEN_KEY);
+    }
+  }
+  registerPwa();
 }
 
 function bindEvents() {
   byId("show-register-btn").addEventListener("click", () => toggleAuthMode(true));
   byId("show-login-btn").addEventListener("click", () => toggleAuthMode(false));
   byId("register-form").addEventListener("submit", registerOrganization);
-  byId("login-form").addEventListener("submit", event => {
+  byId("login-form").addEventListener("submit", async event => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
-    const user = state.users.find(item => item.email === data.email && item.password === data.password && item.status !== "Suspendu");
-    if (user) {
-      state.authenticated = true;
-      state.currentUserEmail = user.email;
-      state.currentEntityId = userEntityIds(user)[0] || state.currentEntityId;
-      state.profile.name = user.name;
-      state.profile.email = user.email;
+    byId("login-error").textContent = "Connexion en cours…";
+    try {
+      const payload = await apiRequest("/api/auth/login", { method: "POST", body: JSON.stringify(data) });
+      authToken = payload.token;
+      sessionStorage.setItem(TOKEN_KEY, authToken);
+      applyServerPayload(payload, true);
       byId("login-screen").classList.add("is-hidden");
       byId("app-shell").classList.remove("is-hidden");
       byId("login-error").textContent = "";
+      connectRealtime();
       renderAll();
-      if (!user.onboardingSeen) openOnboarding();
-    } else {
-      byId("login-error").textContent = "Identifiants incorrects.";
+      if (!payload.user.onboardingSeen) openOnboarding();
+    } catch (error) {
+      byId("login-error").textContent = error.message;
     }
   });
   byId("logout-btn").addEventListener("click", () => {
     state.authenticated = false;
     finishOnboarding();
+    authToken = "";
+    sessionStorage.removeItem(TOKEN_KEY);
+    syncSocket?.close();
     closeMobileMenu();
     byId("app-shell").classList.add("is-hidden");
     byId("login-screen").classList.remove("is-hidden");
@@ -625,8 +752,15 @@ function bindEvents() {
   byId("onboarding-next").addEventListener("click", nextOnboardingStep);
   byId("onboarding-prev").addEventListener("click", previousOnboardingStep);
   byId("onboarding-skip").addEventListener("click", finishOnboarding);
+  byId("install-app-btn")?.addEventListener("click", installPwa);
   updateCloseAvailability();
   setInterval(updateCloseAvailability, 1000);
+  setInterval(() => {
+    if (state.authenticated) {
+      cacheState();
+      syncRemoteState();
+    }
+  }, 1000);
 }
 
 function navigate(view) {
@@ -1423,7 +1557,7 @@ function downloadPurchaseOrder(id) {
 
 function downloadSupplierInvoice(id) {
   const invoice = state.supplierInvoices.find(item => item.id === id);
-  if (!invoice?.fileDataUrl) return alert("La pièce numérisée n’est plus disponible dans ce navigateur.");
+  if (!invoice?.fileDataUrl) return alert("La pièce numérisée n’est pas disponible dans cet espace FinanceOS.");
   const link = document.createElement("a");
   link.href = invoice.fileDataUrl;
   link.download = invoice.fileName;
@@ -2235,25 +2369,20 @@ function renderUsers() {
   setSettingsTab(state.settingsTab);
 }
 
-function addUser(event) {
+async function addUser(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
   const data = Object.fromEntries(formData);
   data.access = formData.getAll("access").join(",") || roleAccess(data.role);
-  data.password = data.password || "demo1234";
-  data.onboardingSeen = false;
-  const existing = state.users.find(user => user.email === data.email);
-  if (existing) {
-    if (!userEntityIds(existing).includes(state.currentEntityId)) existing.entityIds = [...userEntityIds(existing), state.currentEntityId];
-    existing.role = data.role;
-    existing.access = data.access;
-    existing.status = data.status;
-    if (data.password) existing.password = data.password;
-  } else {
-    state.users.unshift({ entityIds: [state.currentEntityId], ...data });
+  data.entityIds = [state.currentEntityId];
+  try {
+    const payload = await apiRequest("/api/users", { method: "POST", body: JSON.stringify(data) });
+    state.users = payload.users;
+    event.currentTarget.reset();
+    renderUsers();
+  } catch (error) {
+    alert(error.message);
   }
-  event.currentTarget.reset();
-  renderUsers();
 }
 
 const accessScreens = [
@@ -2299,26 +2428,30 @@ function applyRoleAccess() {
   });
 }
 
-function updateUserPassword(index) {
+async function updateUserPassword(index) {
   const user = scoped("users")[index];
   if (!user) return;
   const password = prompt(`Nouveau mot de passe pour ${user.name}`);
   if (!password) return;
-  if (password.length < 6) return alert("Le mot de passe doit contenir au moins 6 caractères.");
-  user.password = password;
-  alert("Mot de passe mis à jour.");
+  if (password.length < 8) return alert("Le mot de passe doit contenir au moins 8 caractères.");
+  try {
+    await apiRequest(`/api/users/${user.id}/password`, { method: "PATCH", body: JSON.stringify({ password }) });
+    alert("Mot de passe mis à jour.");
+  } catch (error) { alert(error.message); }
 }
 
-function deleteUser(index) {
+async function deleteUser(index) {
   const users = scoped("users");
   const user = users[index];
   if (!user) return;
   const assignedDocuments = Object.entries(currentSettings().signers || {}).filter(([, email]) => email === user.email).map(([kind]) => kind);
   if (assignedDocuments.length) return alert("Cet utilisateur est signataire d’un document. Choisissez d’abord un autre signataire dans les paramètres.");
-  const entityIds = userEntityIds(user).filter(id => id !== state.currentEntityId);
-  if (entityIds.length) user.entityIds = entityIds;
-  else state.users = state.users.filter(item => item !== user);
-  renderUsers();
+  if (!confirm(`Supprimer l’accès de ${user.name} à cet espace FinanceOS ?`)) return;
+  try {
+    await apiRequest(`/api/users/${user.id}`, { method: "DELETE" });
+    state.users = state.users.filter(item => item.id !== user.id);
+    renderUsers();
+  } catch (error) { alert(error.message); }
 }
 
 function renderProfile() {
@@ -2351,7 +2484,7 @@ function renderProfile() {
   document.querySelectorAll("[data-profile-payslip]").forEach(button => button.addEventListener("click", () => downloadPayslip(button.dataset.profilePayslip)));
 }
 
-function saveProfile(event) {
+async function saveProfile(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const user = currentUser();
@@ -2373,20 +2506,25 @@ function saveProfile(event) {
       });
     });
   }
+  try {
+    const payload = await apiRequest("/api/profile", { method: "PATCH", body: JSON.stringify({ name: data.name, email: data.email, signatureTitle: data.signatureTitle, bio: data.bio, photoDataUrl: state.profile.photoDataUrl }) });
+    Object.assign(user || {}, payload.user);
+  } catch (error) { return alert(error.message); }
   renderAll();
 }
 
-function changeOwnPassword(event) {
+async function changeOwnPassword(event) {
   event.preventDefault();
   const user = currentUser();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   if (!user) return;
-  if (data.currentPassword !== user.password) return alert("Mot de passe actuel incorrect.");
-  if (!data.newPassword || data.newPassword.length < 6) return alert("Le nouveau mot de passe doit contenir au moins 6 caractères.");
+  if (!data.newPassword || data.newPassword.length < 8) return alert("Le nouveau mot de passe doit contenir au moins 8 caractères.");
   if (data.newPassword !== data.confirmPassword) return alert("La confirmation ne correspond pas.");
-  user.password = data.newPassword;
-  event.currentTarget.reset();
-  alert("Mot de passe modifié.");
+  try {
+    await apiRequest("/api/profile/password", { method: "PATCH", body: JSON.stringify(data) });
+    event.currentTarget.reset();
+    alert("Mot de passe modifié.");
+  } catch (error) { alert(error.message); }
 }
 
 function uploadProfilePhoto(event) {
@@ -2395,6 +2533,7 @@ function uploadProfilePhoto(event) {
   readImageFile(file, photoDataUrl => {
     state.profile.photoDataUrl = photoDataUrl;
     renderProfile();
+    apiRequest("/api/profile", { method: "PATCH", body: JSON.stringify({ photoDataUrl }) }).catch(error => alert(error.message));
   });
 }
 
@@ -2490,6 +2629,7 @@ function finishOnboarding() {
   document.querySelector(".sidebar").classList.remove("mobile-open");
   byId("onboarding-modal").classList.add("is-hidden");
   persistState();
+  apiRequest("/api/profile", { method: "PATCH", body: JSON.stringify({ onboardingSeen: true }) }).catch(console.error);
 }
 
 function openClientModal() {
@@ -2838,6 +2978,29 @@ function download(filename, mime, content) {
 
 function formatDate(value) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+let deferredInstallPrompt = null;
+
+function registerPwa() {
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(console.error);
+  window.addEventListener("beforeinstallprompt", event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    byId("install-app-btn")?.classList.remove("is-hidden");
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    byId("install-app-btn")?.classList.add("is-hidden");
+  });
+}
+
+async function installPwa() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  byId("install-app-btn")?.classList.add("is-hidden");
 }
 
 init();

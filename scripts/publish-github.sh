@@ -2,13 +2,14 @@
 set -eu
 
 if [ "$#" -ne 1 ]; then
-  echo "Usage: $0 git@github.com:PROPRIETAIRE/finance-os.git" >&2
+  echo "Usage: $0 git@github.com:PROPRIETAIRE/FinanceOS.git" >&2
   exit 1
 fi
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 GIT_DIR="$ROOT/.git-local"
 REMOTE_URL="$1"
+VERSION=$(cat "$ROOT/VERSION")
 
 if [ ! -d "$GIT_DIR" ]; then
   echo "Métadonnées Git introuvables: $GIT_DIR" >&2
@@ -22,7 +23,6 @@ else
 fi
 
 git --git-dir="$GIT_DIR" push -u origin main
-git --git-dir="$GIT_DIR" push origin v1.0.0
+git --git-dir="$GIT_DIR" push origin "v$VERSION"
 
-echo "Finance OS 1.0.0 publié sur $REMOTE_URL"
-
+echo "FinanceOS $VERSION publié sur $REMOTE_URL"

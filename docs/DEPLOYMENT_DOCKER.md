@@ -1,63 +1,57 @@
-# Déploiement Docker - Finance OS 1.0.0
+# Déploiement Docker - FinanceOS 2.0.0
 
 ## Prérequis
 
-- Une VM ou un LXC Linux avec Docker Engine et Docker Compose.
-- Les ports `80` ou `8080` ouverts selon l'architecture retenue.
-- Un nom de domaine et un reverse proxy HTTPS pour une exposition sur Internet.
+- Docker Engine et Docker Compose ;
+- au moins 2 Go de RAM et 10 Go de stockage ;
+- un nom de domaine HTTPS pour l'installation PWA hors de `localhost`.
 
-## Construction locale
+## Installation
 
 ```bash
-git clone URL_DU_DEPOT finance-os
+git clone https://github.com/johnzidah-dt/FinanceOS.git finance-os
 cd finance-os
 cp .env.example .env
-docker compose build --pull
-docker compose up -d
+nano .env
+docker compose up -d --build
 docker compose ps
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-L'application est disponible sur `http://IP_DU_SERVEUR:8080`.
-
-## Déploiement depuis GitHub Container Registry
-
-Dans `.env`, utilisez l'image publiée par GitHub Actions :
+Dans `.env`, remplacez au minimum :
 
 ```dotenv
-FINANCE_OS_IMAGE=ghcr.io/PROPRIETAIRE/finance-os
-FINANCE_OS_VERSION=1.0.0
-FINANCE_OS_PORT=8080
+POSTGRES_PASSWORD=mot-de-passe-long-et-unique
+JWT_SECRET=secret-aleatoire-de-64-caracteres-ou-plus
+INITIAL_ADMIN_PASSWORD=mot-de-passe-administrateur
 ```
 
-Pour un dépôt privé, authentifiez le serveur avec un jeton GitHub disposant du droit `read:packages` :
+## HTTPS et PWA
+
+Placez FinanceOS derrière Caddy, Traefik, Nginx Proxy Manager ou un reverse proxy Nginx. Le proxy doit transmettre HTTP et WebSocket vers `http://127.0.0.1:8080`.
+
+Une fois le certificat HTTPS actif, Chrome, Edge et Android peuvent proposer **Installer FinanceOS**. Sur iPhone/iPad, utilisez **Partager > Sur l'écran d'accueil**.
+
+## Images GitHub
+
+Le pipeline publie deux images :
+
+```text
+ghcr.io/johnzidah-dt/financeos
+ghcr.io/johnzidah-dt/financeos-api
+```
+
+Pour un dépôt privé, connectez Docker à GHCR avec un jeton `read:packages`, puis utilisez `docker-compose.prod.yml`.
+
+## Sauvegarde
 
 ```bash
-echo "$GHCR_TOKEN" | docker login ghcr.io -u UTILISATEUR_GITHUB --password-stdin
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-curl -fsS http://127.0.0.1:8080/healthz
+mkdir -p backups
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > backups/financeos.dump
 ```
 
-## Mise en ligne HTTPS
-
-Exposez le conteneur derrière Nginx Proxy Manager, Traefik, Caddy ou un reverse proxy Nginx. Le proxy doit :
-
-- terminer TLS avec un certificat valide ;
-- rediriger HTTP vers HTTPS ;
-- conserver durablement le même nom de domaine ;
-- transmettre les requêtes vers `http://127.0.0.1:8080`.
-
-Le maintien de la même origine est essentiel pour la V1, car les données sont stockées dans le navigateur.
-
-## Commandes d'exploitation
+## Restauration
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=200
-docker compose -f docker-compose.prod.yml restart
-docker compose -f docker-compose.prod.yml down
+docker compose exec -T db pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists < backups/financeos.dump
 ```
-
-N'utilisez pas `docker compose down -v` sur une future version équipée d'une base de données.
-

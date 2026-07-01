@@ -1,84 +1,44 @@
-# Plan de mise à jour et de protection des données
+# Mises à jour et protection des données
 
-## Situation de la V1
+## Source de vérité
 
-Finance OS 1.0.0 est servi comme application statique. Les données sont enregistrées dans le stockage local du navigateur sous la clé stable `finance-os-prototype-v17`. Le remplacement du conteneur ne supprime pas ces données si l'utilisateur conserve le même navigateur et exactement la même origine : protocole, domaine et port.
+Depuis FinanceOS 2.0.0, PostgreSQL est la source de vérité. Les données du navigateur servent uniquement de cache et ne doivent pas être utilisées comme sauvegarde de production.
 
-Cette architecture convient aux tests, mais pas encore à un usage multi-utilisateur centralisé.
+Le volume nommé `financeos-db` est indépendant des conteneurs de l'interface et de l'API. `docker compose up -d` remplace les services sans supprimer la base.
 
-## Procédure obligatoire avant chaque mise à jour V1
+## Procédure avant mise à jour
 
-1. Dans Finance OS, ouvrir **Paramètres > Application**.
-2. Télécharger une sauvegarde JSON et vérifier que le fichier n'est pas vide.
-3. Créer un snapshot Proxmox de la VM ou du LXC.
-4. Noter la version Docker actuellement déployée.
-5. Déployer une version numérotée, jamais `latest` seule.
-6. Vérifier `/healthz`, la connexion et l'ouverture des principales rubriques.
-7. Restaurer la sauvegarde depuis l'application uniquement si les données n'apparaissent pas.
-
-Le fichier de sauvegarde contient des données sensibles et doit être chiffré ou placé dans un coffre sécurisé.
-
-## Mise à jour Docker
+1. Créer une sauvegarde `pg_dump`.
+2. Copier la sauvegarde hors du serveur.
+3. Créer un snapshot Proxmox.
+4. Noter la version actuellement déployée.
+5. Mettre à jour les images sans supprimer les volumes.
+6. Contrôler la connexion, les factures, les paiements et les utilisateurs.
 
 ```bash
-cp .env .env.before-update
-# Modifier uniquement FINANCE_OS_VERSION dans .env
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-curl -fsS http://127.0.0.1:8080/healthz
+docker compose exec -T db pg_dump -U financeos -d financeos -Fc > financeos-before-update.dump
+docker compose pull
+docker compose up -d
+docker compose ps
 ```
 
-## Rollback applicatif
+## Règle impérative
+
+Ne jamais utiliser les commandes suivantes en production :
 
 ```bash
-cp .env.before-update .env
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose down -v
+docker volume rm financeos-db
 ```
 
-Le rollback du conteneur ne doit jamais écraser les données. Une restauration de sauvegarde reste une opération séparée et explicite.
+## Évolution du schéma
 
-## Règles de versionnement des données
+Les créations de tables sont idempotentes et exécutées au démarrage de l'API. Les prochaines versions devront ajouter des migrations numérotées, transactionnelles et additives. Une colonne ou table utilisée par la version précédente ne sera supprimée qu'après une version de transition.
 
-- `APP_VERSION` suit le versionnement sémantique.
-- `DATA_SCHEMA_VERSION` n'augmente que lorsque la structure des données change.
-- Chaque évolution du schéma ajoute une migration idempotente de `N` vers `N+1`.
-- Une migration ne supprime jamais immédiatement une propriété encore utilisée par la version précédente.
-- L'application refuse une sauvegarde provenant d'un schéma plus récent.
-- La clé de stockage ne doit jamais être renommée pour contourner une migration.
+## Import des données V1
 
-## Passage à une base PostgreSQL
+Une sauvegarde JSON V1 peut être importée depuis **Paramètres > Application** après connexion. L'import remplace l'état métier partagé de l'espace courant dans PostgreSQL. Créez d'abord un `pg_dump`.
 
-### Phase 1 - Socle
+## Rollback
 
-- API authentifiée côté serveur.
-- PostgreSQL dans un volume nommé ou un service managé.
-- Mots de passe hachés avec Argon2 ou bcrypt.
-- Stockage objet séparé pour les contrats, scans et relevés.
-- Import contrôlé des sauvegardes JSON V1.
-
-### Phase 2 - Migrations sûres
-
-- Outil de migration versionné avec le code.
-- Sauvegarde `pg_dump` avant migration.
-- Migrations transactionnelles et additives selon le modèle expand/contract.
-- Compatibilité temporaire entre la version courante et la précédente.
-- Migration exécutée par une tâche unique avant le basculement applicatif.
-
-### Phase 3 - Déploiement
-
-- Environnement de staging alimenté par des données anonymisées.
-- Test automatique de restauration de sauvegarde.
-- Image Docker référencée par tag et digest.
-- Contrôle de santé, vérification fonctionnelle et rollback automatique.
-- Conservation quotidienne, hebdomadaire et mensuelle des sauvegardes.
-
-## Critères autorisant une mise à jour
-
-- Sauvegarde créée et restaurable.
-- Migration testée sur une copie de la base.
-- Tests fonctionnels et comptables validés.
-- Image Docker immuable disponible.
-- Version précédente encore disponible pour rollback.
-- Notes de version et procédure de retour arrière publiées.
-
+Un rollback applicatif consiste à redéployer les anciennes images. Une restauration PostgreSQL n'est nécessaire que si une migration de données incompatible a été appliquée.
