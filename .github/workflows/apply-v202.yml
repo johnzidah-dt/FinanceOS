@@ -1,26 +1,21 @@
-name: Finalize FinanceOS 2.0.2
-
+name: Clean FinanceOS 2.0.2
 on:
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
-  finalize:
+  clean:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Finalize release
+      - name: Clean release files
         shell: bash
         run: |
           set -euo pipefail
-          echo 'H4sIAF4bRmoAA+1W227bRhB1+8infsJEMJC2kCiKusUCZMR2XVuoE9vyBSiKQFhRK3FtksvsRZe6/pH+RvuBnSUlilIkp2hTBEU8LyRnz1x2Zs4u7RFTvu6XJ1zcDwM+keULMj2lZEBF2eORIiyiwp6Fwc4/F8dxGrUamGezUU+ejpt+J+JWHKjUXbdSq9TrTgUc13WrzR2Y/ouYf1u0VERgKnfcj35lA+JvwSFsOHzCT7oVyJ7/E6k6ECoW0nal+crda+5V96p2o1pxX7nNhmvVm3DWOTzoHp12bo/tKVFK2B4PbRLHAbVjwcc0IpFH2weXnYML9mNNnb257Na5VduDKzQ6+/kpo6++3tl/Mf3zj29Ofrc+dx2+VLE/4P+nYv1SPsL/aq3aWOO/U3WqO+B8kugfkS+c/xEJaQtuSYBbVxRINIBY9wMmfcgGwbJ41LIAFjPSGzAZE+X5RhlrmTwB+gJZ7VPZgl9CtHuXKBUZGUVh/H3hXYIOgp6g7zWVaouVFVMRMikZj6SBmDRopBAg8FoyPoh3T0bGYiKYopZ1x/sZMkk49SyVwC2NZukXQEiUYNPFFwCLvEAP6FIBUEqjTVUL7JwafenhEG2hUNiCLksqxliqjUYlErPUUOhIlrCaoPs6UroUYIZSzdOlsVwkU4K0MUc+9e65VplfLc3GiadMecrefPn1uGGtWWYtlVwLj2YOMIMWYHelJ1isZFnQgBJJS4krW/rrfq6oAh3D5fGbm7UkBty7x78ESZWOS+9pqEtpWq/H1S1Ofkgs4FCzYDB9yls/QWz3d8ZH2D5QHE5Oj7rLjg5bkJ5nNsVLRvUMGl604WV+7l5ujhzwEYtyIRegCTrMz4igI4ajNcNQvidsxnNr6FCkGe4+PCxSQZdcwONjDhcTKZFNgxQnqSeokvZJ5/r05rB3ff7T8VuDX9t0F8cfzCXKPGKSBJw3w5Ll9tHfui5pN/V8DoUxCTRt736L1nB73L3qnL/9rgD7+1DYnUc+v7m+uLkurAeety2kiuBEkZV4Rrm5ngt4VtL61pKyMOXzvKDlXPEEjblkWMAZVsToUxbbKbdWq5qeNb+tcFDNYtqWNMS6FPHMUtif9sPDvEor1tuwIbnj4vHRxjcWmbcNNj4pxoJiQua19CFAkEkxLX9K+CL+AfUDit6Z7A3okOhA9dKTcJP/pXkyLuagsOdbsJH9scbhSdY3TE1Ctvy5vrlbCeNK5jDP+tXY2q/s2Ms1ZK5bm3Pc7pCLEOMELNLTMgkHjVpx/i7CRi0PNjdJnjhPcXhT55fFMbOXVcYsrsID0qfBdoN02Zh87tv5WZ7lWZ7lv5O/AB+FvdsAEgAA' | base64 -d > /tmp/financeos-v202-ci.tar.gz
-          tar -xzf /tmp/financeos-v202-ci.tar.gz
           find . -type f -name '._*' -delete
           rm -f .github/workflows/apply-v202.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Finalize FinanceOS 2.0.2"
+          git commit -m "Clean FinanceOS 2.0.2 release files"
           git push origin main
