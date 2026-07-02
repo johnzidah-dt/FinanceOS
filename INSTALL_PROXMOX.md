@@ -1,4 +1,4 @@
-# Installation de FinanceOS 2.0.1 sur Proxmox
+# Installation de FinanceOS 2.0.2 sur Proxmox
 
 ## Architecture recommandée
 

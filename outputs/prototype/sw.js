@@ -1,4 +1,4 @@
-const CACHE = "financeos-shell-v2.0.1";
+const CACHE = "financeos-shell-v2.0.2";
 const SHELL = ["/", "/index.html", "/styles.css?v=27", "/app.js?v=31", "/manifest.webmanifest", "/icons/financeos-icon.svg", "/vendor/pdf-lib.min.js"];
 
 self.addEventListener("install", event => {

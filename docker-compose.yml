@@ -19,7 +19,7 @@ services:
       - no-new-privileges:true
 
   api:
-    image: ${FINANCE_OS_API_IMAGE:-finance-os-api}:${FINANCE_OS_VERSION:-2.0.1}
+    image: ${FINANCE_OS_API_IMAGE:-finance-os-api}:${FINANCE_OS_VERSION:-2.0.2}
     build:
       context: ./server
     restart: unless-stopped
@@ -39,11 +39,11 @@ services:
       - no-new-privileges:true
 
   finance-os:
-    image: ${FINANCE_OS_IMAGE:-finance-os}:${FINANCE_OS_VERSION:-2.0.1}
+    image: ${FINANCE_OS_IMAGE:-finance-os}:${FINANCE_OS_VERSION:-2.0.2}
     build:
       context: .
       args:
-        APP_VERSION: ${FINANCE_OS_VERSION:-2.0.1}
+        APP_VERSION: ${FINANCE_OS_VERSION:-2.0.2}
         VCS_REF: ${VCS_REF:-local}
         SOURCE_URL: ${SOURCE_URL:-local}
     restart: unless-stopped

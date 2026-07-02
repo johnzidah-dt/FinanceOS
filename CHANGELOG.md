@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.2 - 2026-07-01
+
+- Contacts clients et fournisseurs modifiables, avec distinction entreprise/particulier et plusieurs personnes rattachées.
+- Références de factures et proformas configurables avec les variables de séquence, mois et année ; préfixe facture `FAC` par défaut.
+- Calcul automatique des lignes par quantité et prix unitaire, avec remise en pourcentage sur les factures et proformas.
+- Montant arrêté écrit en lettres et mise en page des informations client/concerne améliorée sur les documents.
+- Arrêté automatique des opérations à 22h et blocage des nouvelles écritures entre 22h et minuit.
+- Relevés bancaires obligatoirement rattachés à un compte bancaire actif ; terminologie RIB harmonisée.
+- Modification des comptes bancaires dans une fenêtre dédiée.
+- Clôture et archivage des comptes avec report préalable du solde et conservation intégrale des mouvements.
+- Assiette CNSS appliquée au salaire et aux primes soumises, avec exclusion explicite des remboursements de frais.
+- Bulletin de paie réorganisé en tableau détaillé avec bases, taux, gains, retenues et reste dû.
+- Décaissement salarial simplifié, sélection par employé et mois, et paiements partiels limités au salaire restant dû.
+- Salaires dus et mois concernés visibles dans la liste et le dossier de chaque employé.
+- Écran de connexion centré et entête mobile rendu plus compact.
+
 ## 2.0.1 - 2026-07-01
 
 - Suppression du compte et de la société de démonstration : la première ouverture crée désormais le premier administrateur et sa société.

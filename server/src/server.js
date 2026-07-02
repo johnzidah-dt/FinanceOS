@@ -25,6 +25,8 @@ function defaultSettings(signerEmail = "") {
     tagline: "Gestion financière et facturation",
     signers: { invoice: signerEmail, proforma: signerEmail, receipt: signerEmail, payroll: signerEmail },
     payrollRules: { cnssEmployee: 4, cnssEmployer: 17.5, amuEmployee: 5, amuEmployer: 5, irppRate: 0, workingDays: 22 },
+    invoiceReferenceTemplate: "N/Réf.{SEQ}/{YY}/FAC/AG",
+    proformaReferenceTemplate: "N/Réf.{SEQ}/{YY}/PROF/AG",
     footer: "Finance OS\nFacturation - Paiements - Caisse - Banque",
     terms: "Validité de l’offre : 15 jours.\nDémarrage après validation écrite."
   };
@@ -33,7 +35,7 @@ function defaultSettings(signerEmail = "") {
 function blankState(entityId, entityName, country = "Togo", signerEmail = "") {
   const settings = defaultSettings(signerEmail);
   return {
-    dataSchemaVersion: 2,
+    dataSchemaVersion: 3,
     dayClosedByEntity: {},
     settings,
     entities: [{ id: entityId, name: entityName, sector: "À configurer", country, settings: structuredClone(settings) }],
@@ -65,7 +67,7 @@ async function migrate() {
     );
     CREATE TABLE IF NOT EXISTS workspace_state (
       workspace_id uuid PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
-      revision bigint NOT NULL DEFAULT 1, schema_version integer NOT NULL DEFAULT 2,
+      revision bigint NOT NULL DEFAULT 1, schema_version integer NOT NULL DEFAULT 3,
       data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), updated_by uuid REFERENCES users(id)
     );
     CREATE INDEX IF NOT EXISTS workspace_members_user_idx ON workspace_members(user_id);
@@ -195,7 +197,7 @@ app.put("/api/state", auth, async (req, res, next) => {
       nextState = structuredClone(row.data);
       clientChanges.forEach(key => { nextState[key] = req.body.state[key]; });
     }
-    const result = await client.query(`UPDATE workspace_state SET data=$1, revision=revision+1, schema_version=$2, updated_at=now(), updated_by=$3 WHERE workspace_id=$4 RETURNING revision, updated_at`, [nextState, Number(req.body.schemaVersion) || 2, req.auth.user.id, req.auth.workspaceId]);
+    const result = await client.query(`UPDATE workspace_state SET data=$1, revision=revision+1, schema_version=$2, updated_at=now(), updated_by=$3 WHERE workspace_id=$4 RETURNING revision, updated_at`, [nextState, Number(req.body.schemaVersion) || 3, req.auth.user.id, req.auth.workspaceId]);
     await client.query("COMMIT");
     const payload = { type: "state-updated", revision: Number(result.rows[0].revision), sourceId: req.body.sourceId || "", updatedAt: result.rows[0].updated_at, state: nextState };
     broadcast(req.auth.workspaceId, { type: payload.type, revision: payload.revision, sourceId: payload.sourceId, updatedAt: payload.updatedAt });

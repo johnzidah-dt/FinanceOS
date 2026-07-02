@@ -9,7 +9,7 @@ Depuis la racine du projet :
 ```bash
 gh auth login
 gh repo create FinanceOS --private --source=. --remote=origin --push
-git push origin v2.0.1
+git push origin v2.0.2
 ```
 
 ## Avec un dépôt créé depuis le site GitHub
@@ -19,7 +19,7 @@ Créez un dépôt privé vide nommé `FinanceOS`, sans README ni licence, puis e
 ```bash
 git remote add origin git@github.com:PROPRIETAIRE/FinanceOS.git
 git push -u origin main
-git push origin v2.0.1
+git push origin v2.0.2
 ```
 
 Depuis le workspace préparé par Codex, dont les métadonnées Git sont séparées, utilisez directement :

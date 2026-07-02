@@ -1,4 +1,4 @@
-# Déploiement Docker - FinanceOS 2.0.1
+# Déploiement Docker - FinanceOS 2.0.2
 
 ## Prérequis
 

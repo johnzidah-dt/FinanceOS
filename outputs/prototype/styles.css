@@ -55,10 +55,8 @@ button { cursor: pointer; }
 .login-screen {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 42px;
-  padding: 64px;
-  align-items: center;
+  place-items: center;
+  padding: 32px;
   background:
     linear-gradient(135deg, rgba(254, 87, 41, .14), transparent 38%),
     linear-gradient(145deg, #ffffff 0%, #f7f5ef 46%, #eaf5fb 100%);
@@ -93,6 +91,7 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .login-card {
+  width: min(420px, 100%);
   padding: 28px;
   display: grid;
   gap: 18px;
@@ -512,7 +511,7 @@ textarea { resize: vertical; }
 .line-editor {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 72px minmax(240px, 1fr) 92px 74px 104px 38px;
+  grid-template-columns: 64px minmax(210px, 1fr) 82px 68px 78px 112px 38px;
   gap: 8px;
   align-items: end;
   padding: 10px;
@@ -572,6 +571,9 @@ textarea { resize: vertical; }
   margin-bottom: 30px;
   font-size: 16px;
 }
+.invoice-client p { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; margin: 0; }
+.invoice-client u { font-weight: 800; text-underline-offset: 3px; }
+.invoice-client span { line-height: 1.4; }
 .invoice-page h2 {
   text-align: center;
   text-decoration: underline;
@@ -691,6 +693,17 @@ textarea { resize: vertical; }
   margin: 0 0 2px;
   color: var(--muted);
 }
+.contact-card-body { min-width: 0; display: grid; align-content: start; }
+.contact-kind { width: fit-content; padding: 3px 7px; border-radius: 999px; background: #f1eee7; color: var(--ink) !important; font-size: 10px; font-weight: 800; }
+.related-contact-summary { display: grid; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+.related-contact-summary > span { color: var(--ink); }
+.related-contact-summary small { margin-top: 2px; }
+.edit-contact-btn { width: fit-content; margin-top: 10px; }
+.related-contacts-fieldset { border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+.related-contacts-fieldset legend { padding: 0 6px; font-weight: 800; }
+#related-contacts-list { display: grid; gap: 10px; margin-bottom: 10px; }
+.related-contact-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1.2fr 38px; gap: 8px; align-items: end; padding: 10px; border-radius: 12px; background: #f8f7f3; }
+.compact-select { min-height: 40px; max-width: 260px; border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 0 12px; }
 .account-card, .project-card {
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -1095,7 +1108,7 @@ textarea { resize: vertical; }
 @media (max-width: 760px) {
   .cash-operation-guide { grid-template-columns: 1fr; }
   .login-screen, .app-shell { grid-template-columns: 1fr; }
-  .login-screen { padding: 18px; gap: 18px; }
+  .login-screen { padding: 18px; }
   .login-art { padding: 26px; }
   .login-art h1 { font-size: 34px; }
   .login-art p { font-size: 15px; }
@@ -1121,17 +1134,20 @@ textarea { resize: vertical; }
     border: 0;
     background: rgba(28,28,28,.35);
   }
-  .topbar, .page-title, .section-actions { align-items: stretch; flex-direction: column; }
-  .topbar { position: relative; padding-left: 52px; }
-  .mobile-menu-btn { position: absolute; left: 0; top: 0; }
+  .page-title, .section-actions { align-items: stretch; flex-direction: column; }
+  .topbar { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: center; margin-bottom: 18px; }
+  .mobile-menu-btn { position: static; width: 44px; height: 44px; }
   .entity-switcher { min-width: 0; width: 100%; }
   .entity-switcher select { min-width: 0; max-width: none; flex: 1; }
-  .top-actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .top-actions .pill { grid-column: 1 / -1; }
-  .search-box { min-width: 0; max-width: none; }
+  .search-box { grid-column: 1 / -1; min-width: 0; max-width: none; height: 40px; }
+  .top-actions { grid-column: 1 / -1; display: grid; grid-template-columns: auto auto 1fr 1fr; gap: 7px; }
+  .top-actions .pill { grid-column: auto; font-size: 10px; white-space: nowrap; }
+  .top-actions .btn { min-height: 34px; padding: 0 8px; font-size: 11px; }
+  .sync-status { font-size: 10px; padding: 6px 8px; }
   .metric-grid, .metric-grid.compact, .account-grid, .project-grid, .form-grid, .stripe-summary { grid-template-columns: 1fr; }
   .contact-grid { grid-template-columns: 1fr; }
   .line-editor { grid-template-columns: 1fr; }
+  .related-contact-row { grid-template-columns: 1fr; }
   .signature-row, .signature-row.triple-signatures, .closure-report-meta, .closure-summary-grid { grid-template-columns: 1fr; }
   .operation-search-head { align-items: stretch; flex-direction: column; }
   .main { padding: 18px; }

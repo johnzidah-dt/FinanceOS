@@ -1,6 +1,6 @@
 const DEFAULT_EMAIL = "";
-const APP_VERSION = "2.0.1";
-const DATA_SCHEMA_VERSION = 2;
+const APP_VERSION = "2.0.2";
+const DATA_SCHEMA_VERSION = 3;
 const currentDate = new Date();
 const today = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
 const STORAGE_KEY = "finance-os-prototype-v17";
@@ -54,6 +54,7 @@ const state = {
   selectedSupplierInvoiceId: "",
   selectedEmployeeId: "",
   editingEmployeeId: "",
+  editingContactId: "",
   profile: {
     name: "",
     email: "",
@@ -67,6 +68,8 @@ const state = {
     tagline: "Gestion financière et facturation",
     signers: { invoice: DEFAULT_EMAIL, proforma: DEFAULT_EMAIL, receipt: DEFAULT_EMAIL, payroll: DEFAULT_EMAIL },
     payrollRules: { cnssEmployee: 4, cnssEmployer: 17.5, amuEmployee: 5, amuEmployer: 5, irppRate: 0, workingDays: 22 },
+    invoiceReferenceTemplate: "N/Réf.{SEQ}/{YY}/FAC/AG",
+    proformaReferenceTemplate: "N/Réf.{SEQ}/{YY}/PROF/AG",
     footer: "Finance OS\nFacturation - Paiements - Caisse - Banque\nModèle de facture configurable par société",
     terms: "Validité de l’offre : 15 jours.\nDémarrage après validation écrite de la proforma ou réception d’un bon de commande.\nLes délais d’exécution sont confirmés après acceptation."
   },
@@ -92,6 +95,43 @@ const state = {
 
 const byId = id => document.getElementById(id);
 const fmt = value => `${new Intl.NumberFormat("fr-FR").format(Math.round(Number(value) || 0))} CFA`;
+function numberToFrenchWords(value) {
+  const number = Math.max(0, Math.round(Number(value) || 0));
+  if (number === 0) return "zéro";
+  const units = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize"];
+  const underHundred = amount => {
+    if (amount <= 16) return units[amount];
+    if (amount < 20) return `dix-${units[amount - 10]}`;
+    const tensNames = { 20: "vingt", 30: "trente", 40: "quarante", 50: "cinquante", 60: "soixante" };
+    if (amount < 70) {
+      const tens = Math.floor(amount / 10) * 10;
+      const remainder = amount % 10;
+      return `${tensNames[tens]}${remainder === 1 ? " et un" : remainder ? `-${units[remainder]}` : ""}`;
+    }
+    if (amount < 80) return `soixante${amount === 71 ? " et onze" : `-${underHundred(amount - 60)}`}`;
+    if (amount === 80) return "quatre-vingts";
+    return `quatre-vingt-${underHundred(amount - 80)}`;
+  };
+  const underThousand = amount => {
+    if (amount < 100) return underHundred(amount);
+    const hundreds = Math.floor(amount / 100);
+    const remainder = amount % 100;
+    const prefix = hundreds === 1 ? "cent" : `${units[hundreds]} cent${remainder ? "" : "s"}`;
+    return remainder ? `${prefix} ${underHundred(remainder)}` : prefix;
+  };
+  const groups = [[1_000_000_000, "milliard"], [1_000_000, "million"], [1_000, "mille"]];
+  let remainder = number;
+  const words = [];
+  groups.forEach(([size, label]) => {
+    const count = Math.floor(remainder / size);
+    if (!count) return;
+    if (label === "mille") words.push(count === 1 ? "mille" : `${underThousand(count)} mille`);
+    else words.push(`${underThousand(count)} ${label}${count > 1 ? "s" : ""}`);
+    remainder %= size;
+  });
+  if (remainder) words.push(underThousand(remainder));
+  return words.join(" ");
+}
 const userEntityIds = user => user?.entityIds || (user?.entityId ? [user.entityId] : []);
 const scoped = key => state[key].filter(item => key === "users" ? userEntityIds(item).includes(state.currentEntityId) : item.entityId === state.currentEntityId);
 const currentEntity = () => state.entities.find(e => e.id === state.currentEntityId);
@@ -101,13 +141,15 @@ const currentPayrollRules = () => {
   settings.payrollRules = settings.payrollRules || { cnssEmployee: 4, cnssEmployer: 17.5, amuEmployee: 5, amuEmployer: 5, irppRate: 0, workingDays: 22 };
   return settings.payrollRules;
 };
-const isDayClosed = () => Boolean(state.dayClosedByEntity[state.currentEntityId]);
+const isDayClosed = () => state.dayClosedByEntity[state.currentEntityId] === today
+  || scoped("closures").some(closure => closure.date === today);
 const authorizedEntities = () => {
   const user = currentUser();
   return state.entities.filter(entity => userEntityIds(user).includes(entity.id));
 };
-const invoiceTotal = invoice => invoice.lines.reduce((sum, line) => sum + (line.type === "line" ? lineTotal(line) : 0), 0);
-const lineTotal = line => Number(line.totalOverride ?? ((Number(line.unit) || 0) * (Number(line.qty) || 0)));
+const lineSubtotal = line => (Number(line.unit) || 0) * (Number(line.qty) || 0);
+const lineTotal = line => lineSubtotal(line) * (1 - Math.min(100, Math.max(0, Number(line.discountPercent) || 0)) / 100);
+const invoiceTotal = invoice => (invoice.lines || []).reduce((sum, line) => sum + (line.type === "line" ? lineTotal(line) : 0), 0);
 const invoiceStatus = invoice => invoice.paid >= invoiceTotal(invoice) ? "Payée" : invoice.paid > 0 ? "Partiellement payée" : "Impayée";
 const statusClass = status => ["Payée", "Comptabilisée", "Validé", "Validée", "Actif"].includes(status) ? "paid" : ["Partiellement payée", "Envoyé", "Invitation envoyée"].includes(status) ? "partial" : "due";
 const accountName = id => state.accounts.find(account => account.id === id)?.name || id;
@@ -128,11 +170,45 @@ const contactMark = client => {
 };
 const invoiceYear = invoice => Number(String(invoice?.date || today).slice(0, 4));
 const invoiceMonth = invoice => String(invoice?.date || today).slice(5, 7) || "01";
-const invoiceSequenceData = reference => {
-  const match = String(reference || "").trim().match(/^N\/Réf\.(\d+)\/(\d{2}|\d{4})\/PROF\/AG$/i);
+const defaultReferenceTemplates = {
+  invoice: "N/Réf.{SEQ}/{YY}/FAC/AG",
+  proforma: "N/Réf.{SEQ}/{YY}/PROF/AG"
+};
+
+function referenceTemplate(kind = "invoice") {
+  const key = kind === "proforma" ? "proformaReferenceTemplate" : "invoiceReferenceTemplate";
+  return currentSettings()[key] || defaultReferenceTemplates[kind];
+}
+
+function renderReference(kind, sequence, date = today) {
+  const year = String(date || today).slice(0, 4);
+  const month = String(date || today).slice(5, 7) || "01";
+  return referenceTemplate(kind)
+    .replaceAll("{SEQ}", String(sequence).padStart(3, "0"))
+    .replaceAll("{MM}", month)
+    .replaceAll("{YY}", year.slice(-2))
+    .replaceAll("{YYYY}", year);
+}
+
+function referencePattern(kind = "invoice") {
+  const tokens = [];
+  const escaped = referenceTemplate(kind).split(/(\{SEQ\}|\{MM\}|\{YY\}|\{YYYY\})/).map(part => {
+    if (part === "{SEQ}") { tokens.push("sequence"); return "(\\d+)"; }
+    if (part === "{MM}") { tokens.push("month"); return "(\\d{2})"; }
+    if (part === "{YY}") { tokens.push("year2"); return "(\\d{2})"; }
+    if (part === "{YYYY}") { tokens.push("year4"); return "(\\d{4})"; }
+    return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }).join("");
+  return { regex: new RegExp(`^${escaped}$`, "i"), tokens };
+}
+
+const invoiceSequenceData = (reference, kind = "invoice", fallbackYear = Number(today.slice(0, 4))) => {
+  const { regex, tokens } = referencePattern(kind);
+  const match = String(reference || "").trim().match(regex);
   if (!match) return null;
-  const rawYear = Number(match[2]);
-  return { sequence: Number(match[1]), year: match[2].length === 2 ? 2000 + rawYear : rawYear };
+  const values = Object.fromEntries(tokens.map((token, index) => [token, match[index + 1]]));
+  const year = values.year4 ? Number(values.year4) : values.year2 ? 2000 + Number(values.year2) : fallbackYear;
+  return { sequence: Number(values.sequence), year, month: values.month || "" };
 };
 const invoiceSequence = reference => invoiceSequenceData(reference)?.sequence || null;
 
@@ -159,7 +235,7 @@ function formatInvoiceIdentifiers(invoice, sequence) {
   const padded = String(sequence).padStart(3, "0");
   invoice.id = `FCT-${padded}-${month}-${shortYear}`;
   invoice.number = `${padded}/${month}/${shortYear}`;
-  invoice.reference = `N/Réf.${padded}/${shortYear}/PROF/AG`;
+  invoice.reference = renderReference("invoice", sequence, invoice.date);
   invoice.sequence = sequence;
 }
 
@@ -185,8 +261,22 @@ function confirmIrregularSequenceStart(invoice, ignoredInvoice = invoice) {
   return accepted;
 }
 
-function nextProformaSequence() {
-  return scoped("proformas").length + 1;
+function nextProformaSequence(year = Number(today.slice(0, 4))) {
+  const sequences = scoped("proformas")
+    .filter(item => invoiceYear(item) === year)
+    .map(item => invoiceSequenceData(item.reference, "proforma", year)?.sequence)
+    .filter(sequence => sequence > 0);
+  return sequences.length ? Math.max(...sequences) + 1 : 1;
+}
+
+function formatProformaIdentifiers(proforma, sequence) {
+  const shortYear = String(invoiceYear(proforma)).slice(-2);
+  const month = invoiceMonth(proforma);
+  const padded = String(sequence).padStart(3, "0");
+  proforma.id = `PRO-${padded}-${month}-${shortYear}`;
+  proforma.number = `${padded}/${month}/${shortYear}`;
+  proforma.reference = renderReference("proforma", sequence, proforma.date);
+  proforma.sequence = sequence;
 }
 
 function readImageFile(file, callback) {
@@ -268,10 +358,14 @@ function closureTotals(date = today) {
 }
 
 function blockIfDayClosed() {
-  if (!isDayClosed()) return false;
-  alert("La journée est déjà arrêtée. Aucune nouvelle opération ne peut être saisie aujourd’hui.");
+  if (!isDayClosed() && new Date().getHours() < 22) return false;
+  alert(new Date().getHours() >= 22
+    ? "Les opérations sont fermées entre 22h et minuit. L’arrêté du jour est généré automatiquement."
+    : "La journée est déjà arrêtée. Aucune nouvelle opération ne peut être saisie aujourd’hui.");
   return true;
 }
+
+const operationsBlocked = () => isDayClosed() || new Date().getHours() >= 22;
 
 function cloneDefaultSettings() {
   return JSON.parse(JSON.stringify(state.settings));
@@ -279,6 +373,11 @@ function cloneDefaultSettings() {
 
 function ensureEntitySettings(entity = currentEntity()) {
   if (entity && !entity.settings) entity.settings = cloneDefaultSettings();
+  if (entity?.settings) {
+    entity.settings.invoiceReferenceTemplate ||= defaultReferenceTemplates.invoice;
+    entity.settings.proformaReferenceTemplate ||= defaultReferenceTemplates.proforma;
+    entity.settings.payrollRules ||= { cnssEmployee: 4, cnssEmployer: 17.5, amuEmployee: 5, amuEmployer: 5, irppRate: 0, workingDays: 22 };
+  }
   return entity?.settings || state.settings;
 }
 
@@ -316,8 +415,9 @@ async function apiRequest(path, options = {}) {
 
 function applyServerPayload(payload, authenticated = state.authenticated) {
   applyingRemoteState = true;
-  Object.assign(state, payload.state || {});
+  Object.assign(state, payload.state ? migrateSavedData(payload.state) : {});
   state.users = payload.users || state.users;
+  normalizeLoadedState();
   state.authenticated = authenticated;
   if (payload.user) {
     state.currentUserEmail = payload.user.email;
@@ -420,6 +520,7 @@ function migrateSavedData(saved) {
   if (sourceVersion > DATA_SCHEMA_VERSION) throw new Error("Cette sauvegarde a été créée par une version plus récente de Finance OS.");
   if (sourceVersion < 1) migrated.dataSchemaVersion = 1;
   if (sourceVersion < 2) migrated.dataSchemaVersion = 2;
+  if (sourceVersion < 3) migrated.dataSchemaVersion = 3;
   return migrated;
 }
 
@@ -430,6 +531,10 @@ function restoreState() {
   } catch (_) {
     localStorage.removeItem(STORAGE_KEY);
   }
+  normalizeLoadedState();
+}
+
+function normalizeLoadedState() {
   state.entities.forEach(ensureEntitySettings);
   [state.settings, ...state.entities.map(entity => entity.settings)].filter(Boolean).forEach(settings => {
     settings.footer = String(settings.footer || "")
@@ -458,11 +563,25 @@ function restoreState() {
     employee.bankName = employee.bankName || "";
     employee.rib = employee.rib || employee.paymentDetails || "";
     employee.contractFileName = employee.contractFileName || "";
+    employee.expenseReimbursements = Number(employee.expenseReimbursements) || 0;
     employee.contractFileDataUrl = employee.contractFileDataUrl || "";
     employee.contractDraftFileName = employee.contractDraftFileName || "";
     employee.contractDraftFileDataUrl = employee.contractDraftFileDataUrl || "";
     employee.endReasonType = employee.endReasonType || "";
     employee.endReason = employee.endReason || "";
+  });
+  state.contacts.forEach((contact, index) => {
+    contact.id = contact.id || `CONTACT-MIG-${index + 1}`;
+    contact.partyType = contact.partyType || "company";
+    contact.people = Array.isArray(contact.people) ? contact.people : contact.person ? [{ name: contact.person, phone: contact.phone || "", email: contact.email || "", role: "" }] : [];
+  });
+  state.payrollRecords.forEach(record => {
+    record.amountPaid = Number(record.amountPaid) || (record.paymentStatus === "Payé" ? Number(record.net) || 0 : 0);
+    record.cnssBase = Number(record.cnssBase) || Number(record.gross) || 0;
+    record.expenseReimbursements = Number(record.expenseReimbursements) || 0;
+  });
+  Object.keys(state.dayClosedByEntity).forEach(entityId => {
+    if (state.dayClosedByEntity[entityId] === true) state.dayClosedByEntity[entityId] = state.closures.some(closure => closure.entityId === entityId && closure.date === today) ? today : "";
   });
   state.dataSchemaVersion = DATA_SCHEMA_VERSION;
 }
@@ -675,7 +794,7 @@ function bindEvents() {
   byId("back-proforma-editor-btn").addEventListener("click", () => navigate("proforma-create"));
   byId("open-proforma-preview-btn").addEventListener("click", () => { saveProformaFromEditor(); navigate("proforma-preview-view"); renderDocumentPage("proforma-page", selectedProforma(), "PROFORMA"); });
   byId("download-proforma-pdf").addEventListener("click", () => selectedProforma() && downloadFinancialPdf(selectedProforma(), "PROFORMA"));
-  byId("add-proforma-line").addEventListener("click", () => { selectedProforma().lines.push({ type: "line", ref: "", label: "", unit: 0, qty: 1, totalOverride: 0 }); renderProformaEditor(); });
+  byId("add-proforma-line").addEventListener("click", () => { selectedProforma().lines.push({ type: "line", ref: "", label: "", unit: 0, qty: 1, discountPercent: 0 }); renderProformaEditor(); });
   byId("back-folders-btn").addEventListener("click", () => navigate("folders"));
   byId("back-invoices-btn").addEventListener("click", () => navigate("invoices"));
   byId("back-accounts-btn").addEventListener("click", () => navigate("accounts"));
@@ -686,7 +805,7 @@ function bindEvents() {
     renderInvoicePreview();
   });
   byId("download-invoice-pdf").addEventListener("click", () => selectedInvoice() && downloadFinancialPdf(selectedInvoice(), "FACTURE"));
-  byId("add-line-btn").addEventListener("click", () => { selectedInvoice().lines.push({ type: "line", ref: "", label: "", unit: 0, qty: 1, totalOverride: 0 }); renderInvoiceEditor(); });
+  byId("add-line-btn").addEventListener("click", () => { selectedInvoice().lines.push({ type: "line", ref: "", label: "", unit: 0, qty: 1, discountPercent: 0 }); renderInvoiceEditor(); });
   byId("add-section-btn").addEventListener("click", () => { selectedInvoice().lines.push({ type: "section", title: "" }); renderInvoiceEditor(); });
   byId("save-invoice-btn").addEventListener("click", () => {
     if (saveInvoiceFromEditor()) renderAll();
@@ -722,6 +841,7 @@ function bindEvents() {
   byId("user-form").elements.role.addEventListener("change", event => renderUserAccessOptions(event.target.value));
   byId("contact-form").addEventListener("submit", addContact);
   byId("add-contact-btn").addEventListener("click", openContactModal);
+  byId("add-related-contact").addEventListener("click", () => appendRelatedContact());
   byId("close-contact-modal").addEventListener("click", closeContactModal);
   byId("contact-modal").addEventListener("click", event => {
     if (event.target.id === "contact-modal") closeContactModal();
@@ -760,6 +880,12 @@ function bindEvents() {
     if (event.target.id === "account-modal") closeAccountModal();
   });
   byId("account-form").addEventListener("submit", addAccount);
+  byId("account-edit-form").addEventListener("submit", saveAccountDetails);
+  byId("close-account-edit-modal").addEventListener("click", closeAccountEditModal);
+  byId("account-edit-modal").addEventListener("click", event => { if (event.target.id === "account-edit-modal") closeAccountEditModal(); });
+  byId("account-archive-form").addEventListener("submit", archiveAccount);
+  byId("close-account-archive-modal").addEventListener("click", closeAccountArchiveModal);
+  byId("account-archive-modal").addEventListener("click", event => { if (event.target.id === "account-archive-modal") closeAccountArchiveModal(); });
   byId("print-voucher-btn").addEventListener("click", () => {
     const latest = scoped("disbursements")[0];
     if (latest) downloadVoucherPdf(latest);
@@ -773,8 +899,15 @@ function bindEvents() {
     }
   });
   byId("statement-upload").addEventListener("change", event => {
+    const accountId = byId("statement-account-select").value;
+    const account = bankAccounts().find(item => item.id === accountId);
+    if (!account) {
+      event.target.value = "";
+      return alert("Créez et sélectionnez un compte bancaire avant d’importer un relevé.");
+    }
     if (event.target.files[0]) {
-      state.statements.unshift({ entityId: state.currentEntityId, name: event.target.files[0].name, date: today, status: "À rapprocher", matches: 2 });
+      state.statements.unshift({ entityId: state.currentEntityId, accountId, name: event.target.files[0].name, date: today, status: "À rapprocher", matches: 0 });
+      event.target.value = "";
       renderAccounts();
     }
   });
@@ -908,7 +1041,7 @@ function validateInvoiceSequence(invoice, ignoredInvoice = invoice) {
   const parsed = invoiceSequenceData(invoice.reference);
   const year = invoiceYear(invoice);
   if (!parsed || parsed.sequence < 1) {
-    errors.push("La référence doit respecter la syntaxe N/Réf.001/26/PROF/AG avec une séquence positive.");
+    errors.push(`La référence doit respecter la syntaxe configurée (${renderReference("invoice", 1, invoice.date)}) avec une séquence positive.`);
     return errors;
   }
   if (parsed.year !== year) errors.push(`L’année de la référence doit correspondre à l’année ${year} de la facture.`);
@@ -938,6 +1071,7 @@ function validateInvoiceForPosting(invoice) {
     const position = index + 1;
     if (!String(line.label || "").trim()) errors.push(`La désignation de la ligne ${position} est obligatoire.`);
     if (!(Number(line.qty) > 0)) errors.push(`La quantité de la ligne ${position} doit être positive.`);
+    if (Number(line.discountPercent) < 0 || Number(line.discountPercent) > 100) errors.push(`La remise de la ligne ${position} doit être comprise entre 0 et 100%.`);
     if (!(lineTotal(line) > 0)) errors.push(`Le montant de la ligne ${position} doit être positif.`);
   });
   invoice.lines.filter(line => line.type === "section").forEach((line, index) => {
@@ -1070,7 +1204,7 @@ function renderInvoiceEditor() {
     <label>Client facturé<input name="client" value="${invoice.client || ""}" placeholder="Nom du client"></label>
     <div class="full inline-actions"><button id="open-client-modal" type="button" class="btn ghost">+ Nouveau client</button><span class="hint">Créez un client avec ses informations de contact sans quitter la facture.</span></div>
     <label>Date d’émission<input name="date" type="date" value="${invoice.date || today}"></label>
-    <label>Référence annuelle<input name="reference" value="${invoice.reference || ""}"><small>Format : N/Réf.001/${String(invoiceYear(invoice)).slice(-2)}/PROF/AG</small></label>
+    <label>Référence annuelle<input name="reference" value="${invoice.reference || ""}"><small>Format configuré : ${renderReference("invoice", 1, invoice.date)}</small></label>
     <label>État<div class="invoice-state-field"><span class="status ${statusClass(invoice.docState || "Brouillon")}">${invoice.docState || "Brouillon"}</span></div></label>
     <label>Objet<input name="subject" value="${invoice.subject || ""}"></label>
     <label>Pour<input name="purpose" value="${invoice.purpose || ""}"></label>
@@ -1087,8 +1221,9 @@ function renderInvoiceEditor() {
         <label>Réf<input data-field="ref" value="${line.ref || ""}"></label>
         <label>Désignation<input data-field="label" value="${line.label || ""}"></label>
         <label>P.U<input data-field="unit" type="number" value="${line.unit || 0}"></label>
-        <label>Qtté<input data-field="qty" value="${line.qty || ""}"></label>
-        <label>Coût<input data-field="totalOverride" type="number" value="${lineTotal(line)}"></label>
+        <label>Qtté<input data-field="qty" type="number" min="0" step="any" value="${line.qty || ""}"></label>
+        <label>Remise %<input data-field="discountPercent" type="number" min="0" max="100" step="any" value="${line.discountPercent || 0}"></label>
+        <label>Coût calculé<output data-line-total>${fmt(lineTotal(line))}</output></label>
         <button type="button" class="btn ghost" data-delete-line="${index}">×</button>
       </div>`).join("")}
   `;
@@ -1102,6 +1237,16 @@ function renderInvoiceEditor() {
     if (clientSelect.value) clientInput.value = clientSelect.value;
   });
   byId("open-client-modal").addEventListener("click", openClientModal);
+  byId("invoice-editor").querySelectorAll("[data-line]").forEach(row => {
+    const updateTotal = () => {
+      const unit = Number(row.querySelector("[data-field='unit']")?.value) || 0;
+      const qty = Number(row.querySelector("[data-field='qty']")?.value) || 0;
+      const discount = Math.min(100, Math.max(0, Number(row.querySelector("[data-field='discountPercent']")?.value) || 0));
+      const output = row.querySelector("[data-line-total]");
+      if (output) output.textContent = fmt(unit * qty * (1 - discount / 100));
+    };
+    row.querySelectorAll("[data-field='unit'], [data-field='qty'], [data-field='discountPercent']").forEach(input => input.addEventListener("input", updateTotal));
+  });
 }
 
 function saveInvoiceFromEditor() {
@@ -1119,7 +1264,7 @@ function saveInvoiceFromEditor() {
   });
   const enteredSequence = invoiceSequenceData(candidate.reference);
   if (!enteredSequence || enteredSequence.sequence < 1) {
-    showInvoiceEditorErrors(["La référence doit respecter la syntaxe N/Réf.001/26/PROF/AG avec une séquence positive."]);
+    showInvoiceEditorErrors([`La référence doit respecter la syntaxe configurée (${renderReference("invoice", 1, candidate.date)}) avec une séquence positive.`]);
     return false;
   }
   const yearChanged = invoiceYear(candidate) !== invoiceYear(invoice);
@@ -1157,15 +1302,39 @@ function renderContacts() {
   byId("contacts-list").innerHTML = contacts.map(contact => `
     <article class="contact-card">
       ${contact.logoDataUrl ? `<img class="contact-logo" src="${contact.logoDataUrl}" alt="">` : `<div class="contact-logo">${contact.logo}</div>`}
-      <div>
+      <div class="contact-card-body">
+        <span class="contact-kind">${contact.partyType === "individual" ? "Particulier" : "Entreprise"}</span>
         <h3>${contact.company}</h3>
-        <p>${contact.person}</p>
-        <span>${contact.phone}</span>
-        <span>${contact.email}</span>
+        <span>${contact.phone || "Téléphone non renseigné"}</span>
+        <span>${contact.email || "Email non renseigné"}</span>
         <small>${contact.address}</small>
+        <div class="related-contact-summary">${(contact.people || []).map(person => `<span><strong>${person.name}</strong>${person.role ? ` · ${person.role}` : ""}<small>${[person.phone, person.email].filter(Boolean).join(" · ")}</small></span>`).join("") || `<span class="hint">Aucune personne rattachée</span>`}</div>
+        <button class="btn ghost edit-contact-btn" type="button" data-edit-contact="${contact.id}">Modifier</button>
       </div>
     </article>
   `).join("") || `<p class="hint">Aucun ${type === "client" ? "client" : "fournisseur"} enregistré.</p>`;
+  document.querySelectorAll("[data-edit-contact]").forEach(button => button.addEventListener("click", () => openContactModal(button.dataset.editContact)));
+}
+
+function relatedContactRow(person = {}) {
+  return `<div class="related-contact-row">
+    <label>Nom<input data-person-field="name" value="${person.name || ""}" required></label>
+    <label>Fonction<input data-person-field="role" value="${person.role || ""}"></label>
+    <label>Téléphone<input data-person-field="phone" value="${person.phone || ""}"></label>
+    <label>Email<input data-person-field="email" type="email" value="${person.email || ""}"></label>
+    <button class="btn icon remove-related-contact" type="button" aria-label="Supprimer ce contact">×</button>
+  </div>`;
+}
+
+function appendRelatedContact(person = {}) {
+  byId("related-contacts-list").insertAdjacentHTML("beforeend", relatedContactRow(person));
+  byId("related-contacts-list").lastElementChild.querySelector(".remove-related-contact").addEventListener("click", event => event.currentTarget.closest(".related-contact-row").remove());
+}
+
+function readRelatedContacts() {
+  return [...byId("related-contacts-list").querySelectorAll(".related-contact-row")].map(row => Object.fromEntries(
+    [...row.querySelectorAll("[data-person-field]")].map(input => [input.dataset.personField, input.value.trim()])
+  )).filter(person => person.name);
 }
 
 function addContact(event) {
@@ -1175,7 +1344,19 @@ function addContact(event) {
   const file = form.elements.logoFile.files[0];
   delete data.logoFile;
   readImageFile(file, logoDataUrl => {
-    state.contacts.unshift({ entityId: state.currentEntityId, ...data, logoDataUrl });
+    const existing = scoped("contacts").find(contact => contact.id === data.contactId);
+    const contact = {
+      ...(existing || {}),
+      entityId: state.currentEntityId,
+      id: existing?.id || `CONTACT-${Date.now()}`,
+      ...data,
+      people: readRelatedContacts(),
+      logo: data.logo || data.company.slice(0, 2).toUpperCase(),
+      logoDataUrl: logoDataUrl || existing?.logoDataUrl || ""
+    };
+    delete contact.contactId;
+    if (existing) Object.assign(existing, contact);
+    else state.contacts.unshift(contact);
     state.contactTab = data.type;
     document.querySelectorAll("[data-contact-tab]").forEach(item => {
       const active = item.dataset.contactTab === state.contactTab;
@@ -1193,14 +1374,26 @@ function addContact(event) {
   });
 }
 
-function openContactModal() {
-  byId("contact-form").elements.type.value = state.contactTab;
-  byId("contact-form").elements.logo.value = state.contactTab === "client" ? "CL" : "FR";
-  byId("contact-form-title").textContent = state.contactTab === "client" ? "Nouveau client" : "Nouveau fournisseur";
+function openContactModal(contactId = "") {
+  const form = byId("contact-form");
+  const contact = scoped("contacts").find(item => item.id === contactId);
+  state.editingContactId = contact?.id || "";
+  form.reset();
+  form.elements.contactId.value = contact?.id || "";
+  form.elements.type.value = contact?.type || state.contactTab;
+  form.elements.partyType.value = contact?.partyType || "company";
+  form.elements.logo.value = contact?.logo || (state.contactTab === "client" ? "CL" : "FR");
+  ["company", "taxId", "phone", "email", "address"].forEach(field => { form.elements[field].value = contact?.[field] || ""; });
+  byId("related-contacts-list").innerHTML = "";
+  const people = contact?.people?.length ? contact.people : contact?.person ? [{ name: contact.person, phone: contact.phone, email: contact.email }] : [];
+  people.forEach(appendRelatedContact);
+  byId("contact-form-title").textContent = contact ? `Modifier ${contact.company}` : state.contactTab === "client" ? "Nouveau client" : "Nouveau fournisseur";
+  byId("contact-submit-btn").textContent = contact ? "Enregistrer les modifications" : "Enregistrer le contact";
   byId("contact-modal").classList.remove("is-hidden");
 }
 
 function closeContactModal() {
+  state.editingContactId = "";
   byId("contact-modal").classList.add("is-hidden");
 }
 
@@ -1258,7 +1451,8 @@ function renderProformaEditor() {
   byId("proforma-editor-title").textContent = `Éditeur - ${proforma.id}`;
   byId("proforma-editor").innerHTML = `
     <label>Client<select name="client">${clients.map(client => `<option value="${client.company}" ${proforma.client === client.company ? "selected" : ""}>${client.company}</option>`).join("")}</select></label>
-    <label>Référence<input name="reference" value="${proforma.reference || ""}"></label>
+    <label>Date d’émission<input name="date" type="date" value="${proforma.date || today}"></label>
+    <label>Référence<input name="reference" value="${proforma.reference || ""}"><small>Format configuré : ${renderReference("proforma", 1, proforma.date)}</small></label>
     <label>État<select name="docState"><option ${proforma.docState === "Brouillon" ? "selected" : ""}>Brouillon</option><option ${proforma.docState === "Envoyé" ? "selected" : ""}>Envoyé</option><option ${proforma.docState === "Validé" ? "selected" : ""}>Validé</option></select></label>
     <label>Objet<input name="subject" value="${proforma.subject || ""}"></label>
     <label>Pour<input name="purpose" value="${proforma.purpose || ""}"></label>
@@ -1272,8 +1466,9 @@ function renderProformaEditor() {
         <label>Réf<input data-field="ref" value="${line.ref || ""}"></label>
         <label>Désignation<input data-field="label" value="${line.label || ""}"></label>
         <label>P.U<input data-field="unit" type="number" value="${line.unit || 0}"></label>
-        <label>Qtté<input data-field="qty" value="${line.qty || ""}"></label>
-        <label>Coût<input data-field="totalOverride" type="number" value="${lineTotal(line)}"></label>
+        <label>Qtté<input data-field="qty" type="number" min="0" step="any" value="${line.qty || ""}"></label>
+        <label>Remise %<input data-field="discountPercent" type="number" min="0" max="100" step="any" value="${line.discountPercent || 0}"></label>
+        <label>Coût calculé<output data-line-total>${fmt(lineTotal(line))}</output></label>
         <button type="button" class="btn ghost" data-delete-proforma-line="${index}">×</button>
       </div>`).join("")}
     <div class="full"></div>`;
@@ -1301,6 +1496,15 @@ function renderProformaEditor() {
     proforma.lines.splice(Number(button.dataset.deleteProformaLine), 1);
     renderProformaEditor();
   }));
+  byId("proforma-editor").querySelectorAll("[data-proforma-line]").forEach(row => {
+    const updateTotal = () => {
+      const unit = Number(row.querySelector("[data-field='unit']")?.value) || 0;
+      const qty = Number(row.querySelector("[data-field='qty']")?.value) || 0;
+      const discount = Math.min(100, Math.max(0, Number(row.querySelector("[data-field='discountPercent']")?.value) || 0));
+      row.querySelector("[data-line-total]").textContent = fmt(unit * qty * (1 - discount / 100));
+    };
+    row.querySelectorAll("[data-field='unit'], [data-field='qty'], [data-field='discountPercent']").forEach(input => input.addEventListener("input", updateTotal));
+  });
 }
 
 function saveProformaFromEditor() {
@@ -1310,6 +1514,8 @@ function saveProformaFromEditor() {
   const form = byId("proforma-editor");
   const data = Object.fromEntries(new FormData(form));
   const file = form.elements.acceptanceFile.files[0];
+  const parsedReference = invoiceSequenceData(data.reference, "proforma", invoiceYear({ date: data.date }));
+  if (!parsedReference?.sequence) return alert(`La référence doit respecter la syntaxe configurée : ${renderReference("proforma", 1, data.date)}.`);
   Object.assign(proforma, data);
   delete proforma.acceptanceFile;
   if (file) proforma.acceptanceName = file.name;
@@ -1324,6 +1530,7 @@ function saveProformaFromEditor() {
       line[input.dataset.field] = input.type === "number" ? Number(input.value) : input.value;
     });
   });
+  formatProformaIdentifiers(proforma, parsedReference.sequence);
   if (JSON.stringify(proforma) !== before) {
     proforma.history = proforma.history || [];
     proforma.history.unshift({ date: today, action: "Modification", by: currentUser()?.name || "Utilisateur" });
@@ -1332,8 +1539,9 @@ function saveProformaFromEditor() {
 }
 
 function createProforma() {
-  const sequence = String(nextProformaSequence()).padStart(3, "0");
-  const proforma = { entityId: state.currentEntityId, id: `PRO-${sequence}-${today.slice(5, 7)}-${today.slice(2, 4)}`, number: `${sequence}/${today.slice(5, 7)}/${today.slice(2, 4)}`, reference: `N/Réf.${sequence}/${today.slice(2, 4)}/PROF/AG`, date: today, dueDate: today, client: "", subject: "", purpose: "", project: "", docState: "Brouillon", acceptanceName: "", history: [{ date: today, action: "Création", by: currentUser()?.name || "Utilisateur" }], lines: [] };
+  const sequence = nextProformaSequence();
+  const proforma = { entityId: state.currentEntityId, id: "", number: "", reference: "", date: today, dueDate: today, client: "", subject: "", purpose: "", project: "", docState: "Brouillon", acceptanceName: "", history: [{ date: today, action: "Création", by: currentUser()?.name || "Utilisateur" }], lines: [] };
+  formatProformaIdentifiers(proforma, sequence);
   state.proformas.unshift(proforma);
   state.selectedProformaId = proforma.id;
   navigate("proforma-create");
@@ -1389,13 +1597,13 @@ function renderDocumentMarkup(documentData, title) {
   return `
     ${documentBrandHeader()}
     <div class="invoice-meta"><strong>${documentData.reference || "Référence"}</strong><span>Lomé, le ${formatDate(documentData.date || today)}</span></div>
-    <div class="invoice-client"><p><u>Concerne : ${documentData.subject || ""}</u></p><p><strong>Client:</strong> ${documentData.client || ""}</p></div>
+    <div class="invoice-client"><p><u>Concerne :</u><span>${documentData.subject || ""}</span></p><p><strong>Client :</strong><span>${documentData.client || ""}</span></p></div>
     <h2>${title} N°${documentData.number || ""} (CFA)</h2>
     <p><strong>Pour :</strong> ${documentData.purpose || ""}</p>
-    <table class="invoice-table"><thead><tr><th>Réf</th><th>Désignation</th><th>P.U</th><th>Qtté</th><th>Coût</th></tr></thead><tbody>
-      ${documentData.lines.length ? documentData.lines.map((line, index) => line.type === "section" ? `<tr class="section"><td colspan="5">${line.title}</td></tr>` : `<tr class="${index % 2 ? "alt" : ""}"><td><strong>${line.ref}</strong></td><td>${line.label}</td><td>${fmt(line.unit).replace(" CFA", "")}</td><td>${line.qty}</td><td>${fmt(lineTotal(line)).replace(" CFA", "")}</td></tr>`).join("") : `<tr><td colspan="5">Aucune ligne renseignée</td></tr>`}
-    </tbody><tfoot><tr><td colspan="4">TOTAL</td><td>${fmt(total).replace(" CFA", "")}</td></tr></tfoot></table>
-    <p class="amount-text">Arrêtée la présente ${title === "FACTURE" ? "facture" : "proforma"} à la somme totale de ${fmt(total)} HT.</p>
+    <table class="invoice-table"><thead><tr><th>Réf</th><th>Désignation</th><th>P.U</th><th>Qtté</th><th>Remise</th><th>Coût</th></tr></thead><tbody>
+      ${documentData.lines.length ? documentData.lines.map((line, index) => line.type === "section" ? `<tr class="section"><td colspan="6">${line.title}</td></tr>` : `<tr class="${index % 2 ? "alt" : ""}"><td><strong>${line.ref}</strong></td><td>${line.label}</td><td>${fmt(line.unit).replace(" CFA", "")}</td><td>${line.qty}</td><td>${Number(line.discountPercent) || 0}%</td><td>${fmt(lineTotal(line)).replace(" CFA", "")}</td></tr>`).join("") : `<tr><td colspan="6">Aucune ligne renseignée</td></tr>`}
+    </tbody><tfoot><tr><td colspan="5">TOTAL</td><td>${fmt(total).replace(" CFA", "")}</td></tr></tfoot></table>
+    <p class="amount-text">Arrêtée la présente ${title === "FACTURE" ? "facture" : "proforma"} à la somme totale de <strong>${numberToFrenchWords(total)} francs CFA</strong> HT (${fmt(total)}).</p>
     ${documentSignature(title === "FACTURE" ? "invoice" : "proforma", "Signataire autorisé")}
     ${title === "FACTURE" ? bankInfoBlock(documentData) : ""}
     ${title === "PROFORMA" ? termsBlock() : ""}
@@ -1413,9 +1621,9 @@ function renderInvoicePreview() {
 
 function renderPayments() {
   const invoices = scoped("invoices").filter(invoice => invoice.docState === "Comptabilisée");
-  const accounts = scoped("accounts");
+  const accounts = scoped("accounts").filter(account => !["Clôturé", "Archivé"].includes(account.status));
   const payments = scoped("payments");
-  const canPay = invoices.length && accounts.length && !isDayClosed();
+  const canPay = invoices.length && accounts.length && !operationsBlocked();
   byId("payment-form").innerHTML = `
     <label>Facture<select name="invoiceId">${invoices.map(i => `<option value="${i.id}">${i.id} - ${i.client || "Sans client"}</option>`).join("")}</select></label>
     <label>Montant<input name="amount" type="number" value="250000"></label>
@@ -1622,16 +1830,26 @@ function calculatePayroll(employee, period) {
   const rules = currentPayrollRules();
   const baseSalary = Number(employee.baseSalary) || 0;
   const allowances = Number(employee.allowances) || 0;
+  const expenseReimbursements = Number(employee.expenseReimbursements) || 0;
   const gross = baseSalary + allowances;
   const cnssEmployee = gross * Number(rules.cnssEmployee) / 100;
   const amuEmployee = gross * Number(rules.amuEmployee) / 100;
   const taxable = Math.max(0, gross - cnssEmployee - amuEmployee);
   const irpp = taxable * Number(rules.irppRate) / 100;
-  const net = Math.max(0, gross - cnssEmployee - amuEmployee - irpp);
+  const net = Math.max(0, gross - cnssEmployee - amuEmployee - irpp + expenseReimbursements);
   const cnssEmployer = gross * Number(rules.cnssEmployer) / 100;
   const amuEmployer = gross * Number(rules.amuEmployer) / 100;
-  return { entityId: state.currentEntityId, employeeId: employee.id, employeeName: employee.name, period, baseSalary, allowances, gross, cnssEmployee, amuEmployee, irpp, net, cnssEmployer, amuEmployer, employerCost: gross + cnssEmployer + amuEmployer, status: "Brouillon" };
+  return { entityId: state.currentEntityId, employeeId: employee.id, employeeName: employee.name, period, baseSalary, allowances, expenseReimbursements, gross, cnssBase: gross, cnssEmployee, amuEmployee, irpp, net, cnssEmployer, amuEmployer, employerCost: gross + expenseReimbursements + cnssEmployer + amuEmployer, amountPaid: 0, status: "Brouillon" };
 }
+
+const payrollAmountDue = record => Math.max(0, Number(record.net) - (Number(record.amountPaid) || 0));
+const employeePayrollDebt = employeeId => scoped("payrollRecords")
+  .filter(record => record.employeeId === employeeId && record.status === "Validée")
+  .reduce((sum, record) => sum + payrollAmountDue(record), 0);
+const employeePayrollDebtPeriods = employeeId => scoped("payrollRecords")
+  .filter(record => record.employeeId === employeeId && record.status === "Validée" && payrollAmountDue(record) > 0)
+  .map(record => record.period)
+  .sort();
 
 function renderPayroll() {
   const employees = scoped("employees");
@@ -1647,8 +1865,8 @@ function renderPayroll() {
     ["Net à payer", net, latestPeriod || "Aucune période"],
     ["Charges patronales", charges, "CNSS + AMU"]
   ].map((item, index) => `<article class="metric-card"><span>${item[0]}</span><strong>${index ? fmt(item[1]) : item[1]}</strong><small>${item[2]}</small></article>`).join("");
-  byId("employee-table").innerHTML = `<table><thead><tr><th>Employé</th><th>Poste</th><th>Contrat</th><th>CNSS</th><th>Salaire de base</th><th>Fin prévue</th><th>Statut</th></tr></thead><tbody>${employees.length ? employees.map(employee => `<tr><td><button class="employee-name-button" data-open-employee="${employee.id}"><strong>${employee.title ? `${employee.title} ` : ""}${employee.name}</strong><small>${employee.email || "Sans compte associé"}</small></button></td><td>${employee.position}</td><td>${employee.contractType}${employee.contractReference ? `<small>${employee.contractReference}</small>` : ""}</td><td>${employee.cnssNumber || "-"}</td><td>${fmt(employee.baseSalary)}</td><td>${employee.endDate ? formatDate(employee.endDate) : "-"}</td><td><span class="status ${employee.status === "Actif" ? "paid" : "due"}">${employee.status}</span></td></tr>`).join("") : `<tr><td colspan="7">Aucun employé enregistré.</td></tr>`}</tbody></table>`;
-  byId("payroll-run-table").innerHTML = `<table><thead><tr><th>Période</th><th>Employé</th><th>Brut</th><th>CNSS</th><th>AMU</th><th>IRPP</th><th>Net</th><th>Coût employeur</th><th>État</th><th></th></tr></thead><tbody>${records.length ? records.map(record => `<tr><td>${record.period}</td><td><button class="employee-name-button" data-open-employee="${record.employeeId}"><strong>${record.employeeName}</strong></button></td><td>${fmt(record.gross)}</td><td>${fmt(record.cnssEmployee)}</td><td>${fmt(record.amuEmployee)}</td><td>${fmt(record.irpp)}</td><td><strong>${fmt(record.net)}</strong></td><td>${fmt(record.employerCost)}</td><td><span class="status ${record.paymentStatus === "Payé" || record.status === "Validée" ? "paid" : "partial"}">${record.status}${record.paymentStatus ? ` · ${record.paymentStatus}` : ""}</span></td><td><div class="inline-actions compact"><button class="link-button" data-download-payslip="${record.id}">Bulletin</button>${record.status === "Brouillon" ? `<button class="link-button" data-validate-payroll="${record.id}">Valider</button>` : ""}<button class="link-button danger-text" data-delete-payroll="${record.id}">Supprimer</button></div></td></tr>`).join("") : `<tr><td colspan="10">Aucune paie générée.</td></tr>`}</tbody></table>`;
+  byId("employee-table").innerHTML = `<table><thead><tr><th>Employé</th><th>Poste</th><th>Contrat</th><th>Salaire de base</th><th>Salaires dus</th><th>Mois concernés</th><th>Statut</th></tr></thead><tbody>${employees.length ? employees.map(employee => { const debt = employeePayrollDebt(employee.id); const periods = employeePayrollDebtPeriods(employee.id); return `<tr><td><button class="employee-name-button" data-open-employee="${employee.id}"><strong>${employee.title ? `${employee.title} ` : ""}${employee.name}</strong><small>${employee.email || "Sans compte associé"}</small></button></td><td>${employee.position}</td><td>${employee.contractType}${employee.contractReference ? `<small>${employee.contractReference}</small>` : ""}</td><td>${fmt(employee.baseSalary)}</td><td><strong class="${debt ? "danger-text" : ""}">${fmt(debt)}</strong></td><td>${periods.join(", ") || "Aucun"}</td><td><span class="status ${employee.status === "Actif" ? "paid" : "due"}">${employee.status}</span></td></tr>`; }).join("") : `<tr><td colspan="7">Aucun employé enregistré.</td></tr>`}</tbody></table>`;
+  byId("payroll-run-table").innerHTML = `<table><thead><tr><th>Période</th><th>Employé</th><th>Brut</th><th>CNSS</th><th>AMU</th><th>IRPP</th><th>Net</th><th>Reste dû</th><th>Coût employeur</th><th>État</th><th></th></tr></thead><tbody>${records.length ? records.map(record => `<tr><td>${record.period}</td><td><button class="employee-name-button" data-open-employee="${record.employeeId}"><strong>${record.employeeName}</strong></button></td><td>${fmt(record.gross)}</td><td>${fmt(record.cnssEmployee)}</td><td>${fmt(record.amuEmployee)}</td><td>${fmt(record.irpp)}</td><td><strong>${fmt(record.net)}</strong></td><td><strong>${fmt(record.status === "Validée" ? payrollAmountDue(record) : 0)}</strong></td><td>${fmt(record.employerCost)}</td><td><span class="status ${record.paymentStatus === "Payé" || record.status === "Validée" ? "paid" : "partial"}">${record.status}${record.paymentStatus ? ` · ${record.paymentStatus}` : ""}</span></td><td><div class="inline-actions compact"><button class="link-button" data-download-payslip="${record.id}">Bulletin</button>${record.status === "Brouillon" ? `<button class="link-button" data-validate-payroll="${record.id}">Valider</button>` : ""}<button class="link-button danger-text" data-delete-payroll="${record.id}">Supprimer</button></div></td></tr>`).join("") : `<tr><td colspan="11">Aucune paie générée.</td></tr>`}</tbody></table>`;
   const rules = currentPayrollRules();
   byId("payroll-rules-summary").innerHTML = [
     ["CNSS salarié", `${rules.cnssEmployee}%`], ["CNSS employeur", `${rules.cnssEmployer}%`],
@@ -1671,7 +1889,7 @@ function openEmployeeModal(employeeId = "") {
   byId("employee-modal-title").textContent = employee ? "Modifier le dossier salarié" : "Nouvel employé";
   byId("employee-modal-subtitle").textContent = employee ? "Mettez à jour les informations administratives, contractuelles et bancaires." : "Créez le dossier salarié et associez éventuellement son compte utilisateur.";
   byId("employee-submit-btn").textContent = employee ? "Enregistrer les modifications" : "Enregistrer l’employé";
-  const fields = ["title", "name", "email", "phone", "birthDate", "nationalId", "address", "position", "department", "contractType", "contractReference", "startDate", "endDate", "baseSalary", "allowances", "cnssNumber", "bankName", "rib"];
+  const fields = ["title", "name", "email", "phone", "birthDate", "nationalId", "address", "position", "department", "contractType", "contractReference", "startDate", "endDate", "baseSalary", "allowances", "expenseReimbursements", "cnssNumber", "bankName", "rib"];
   fields.forEach(field => { if (employee && form.elements[field]) form.elements[field].value = employee[field] ?? ""; });
   if (!employee) form.elements.startDate.value = today;
   byId("employee-contract-file-hint").textContent = employee?.contractFileName ? `Contrat actuel : ${employee.contractFileName}. Sélectionnez un fichier pour le remplacer.` : "PDF ou scan du contrat, facultatif.";
@@ -1696,6 +1914,7 @@ async function addEmployee(event) {
   if (data.endDate && data.endDate < data.startDate) return alert("La date de fin prévue ne peut pas être antérieure à la date d’entrée.");
   data.baseSalary = Number(data.baseSalary);
   data.allowances = Number(data.allowances) || 0;
+  data.expenseReimbursements = Number(data.expenseReimbursements) || 0;
   const contractFileDataUrl = await readFileData(contractFile);
   const contractDraftFileDataUrl = await readFileData(contractDraftFile);
   let employee = scoped("employees").find(item => item.id === state.editingEmployeeId);
@@ -1743,13 +1962,15 @@ function renderEmployeeDetail() {
   }
   const records = scoped("payrollRecords").filter(record => record.employeeId === employee.id).sort((a, b) => b.period.localeCompare(a.period));
   const latest = records[0];
+  const salaryDebt = employeePayrollDebt(employee.id);
+  const debtPeriods = employeePayrollDebtPeriods(employee.id);
   byId("employee-detail-title").textContent = `${employee.title ? `${employee.title} ` : ""}${employee.name}`;
   byId("employee-detail-subtitle").textContent = `${employee.position}${employee.department ? ` - ${employee.department}` : ""}`;
   byId("employee-detail-summary").innerHTML = [
     ["Statut", employee.status, employee.endDate ? `Fin : ${formatDate(employee.endDate)}` : "Contrat en cours"],
     ["Salaire de base", fmt(employee.baseSalary), employee.contractType],
     ["Bulletins", records.length, records.length ? `${records.filter(record => record.status === "Validée").length} validé(s)` : "Aucun bulletin"],
-    ["Dernier net", latest ? fmt(latest.net) : "-", latest?.period || "Aucune période"]
+    ["Salaires dus", fmt(salaryDebt), debtPeriods.length ? debtPeriods.join(", ") : "Aucun mois impayé"]
   ].map(item => `<article class="metric-card"><span>${item[0]}</span><strong>${item[1]}</strong><small>${item[2]}</small></article>`).join("");
   const detailRows = rows => rows.map(([label, value]) => `<div><strong>${label}</strong><span>${value || "-"}</span></div>`).join("");
   byId("employee-personal-details").innerHTML = detailRows([
@@ -1761,7 +1982,7 @@ function renderEmployeeDetail() {
     ["Motif de fin", employee.endReasonType ? `${employee.endReasonType}${employee.endReason ? ` - ${employee.endReason}` : ""}` : "-"], ["Banque", employee.bankName], ["RIB / IBAN", employee.rib], ["Contrat", employee.contractDraftFileName || "Non attaché"], ["Contrat signé", employee.contractFileName || "Non attaché"]
   ]);
   byId("employee-document-actions").innerHTML = `${employee.contractDraftFileDataUrl ? `<button class="btn ghost" data-download-employee-contract-draft="${employee.id}">Télécharger le contrat</button>` : ""}${employee.contractFileDataUrl ? `<button class="btn ghost" data-download-employee-contract="${employee.id}">Télécharger le contrat signé</button>` : ""}${employee.rib ? `<button class="btn ghost" data-download-employee-rib="${employee.id}">Télécharger la fiche RIB PDF</button>` : ""}` || `<span class="hint">Aucune pièce téléchargeable.</span>`;
-  byId("employee-payroll-history").innerHTML = `<table><thead><tr><th>Période</th><th>Brut</th><th>Retenues</th><th>Net</th><th>État</th><th></th></tr></thead><tbody>${records.length ? records.map(record => `<tr><td>${record.period}</td><td>${fmt(record.gross)}</td><td>${fmt(record.cnssEmployee + record.amuEmployee + record.irpp)}</td><td><strong>${fmt(record.net)}</strong></td><td><span class="status ${record.paymentStatus === "Payé" || record.status === "Validée" ? "paid" : "partial"}">${record.status}${record.paymentStatus ? ` · ${record.paymentStatus}` : ""}</span></td><td><div class="inline-actions compact"><button class="link-button" data-detail-payslip="${record.id}">Télécharger</button><button class="link-button danger-text" data-detail-delete-payroll="${record.id}">Supprimer</button></div></td></tr>`).join("") : `<tr><td colspan="6">Aucun bulletin généré pour cet employé.</td></tr>`}</tbody></table>`;
+  byId("employee-payroll-history").innerHTML = `<table><thead><tr><th>Période</th><th>Brut</th><th>Retenues</th><th>Net</th><th>Reste dû</th><th>État</th><th></th></tr></thead><tbody>${records.length ? records.map(record => `<tr><td>${record.period}</td><td>${fmt(record.gross)}</td><td>${fmt(record.cnssEmployee + record.amuEmployee + record.irpp)}</td><td><strong>${fmt(record.net)}</strong></td><td><strong>${fmt(payrollAmountDue(record))}</strong></td><td><span class="status ${record.paymentStatus === "Payé" || record.status === "Validée" ? "paid" : "partial"}">${record.status}${record.paymentStatus ? ` · ${record.paymentStatus}` : ""}</span></td><td><div class="inline-actions compact"><button class="link-button" data-detail-payslip="${record.id}">Télécharger</button><button class="link-button danger-text" data-detail-delete-payroll="${record.id}">Supprimer</button></div></td></tr>`).join("") : `<tr><td colspan="7">Aucun bulletin généré pour cet employé.</td></tr>`}</tbody></table>`;
   byId("edit-employee-btn").disabled = false;
   byId("delete-employee-btn").disabled = false;
   byId("end-employee-contract-btn").disabled = employee.status !== "Actif";
@@ -1889,10 +2110,10 @@ function savePayrollSettings(event) {
 }
 
 function renderCashdesk() {
-  const accounts = scoped("accounts");
+  const accounts = scoped("accounts").filter(account => !["Clôturé", "Archivé"].includes(account.status));
   const projects = scoped("projects");
   const payableInvoices = scoped("supplierInvoices").filter(invoice => supplierInvoiceStatus(invoice) !== "Réglée");
-  const payablePayroll = scoped("payrollRecords").filter(record => record.status === "Validée" && record.paymentStatus !== "Payé");
+  const payablePayroll = scoped("payrollRecords").filter(record => record.status === "Validée" && payrollAmountDue(record) > 0);
   const hasAccounts = accounts.length > 0;
   byId("cash-operation-form").innerHTML = `
     <label>Compte<select name="accountId">${accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join("")}</select></label>
@@ -1901,23 +2122,23 @@ function renderCashdesk() {
     <label>Montant<input name="amount" type="number" value="50000"></label>
     <label>Libellé<input name="label" value="Apport ou mouvement interne"></label>
     <p class="hint full">Aucune sortie n’est autorisée ici. Toute dépense passe par une fiche de décaissement classée.</p>
-    <button class="btn primary full" type="submit" ${hasAccounts && !isDayClosed() ? "" : "disabled"}>Enregistrer l’opération</button>`;
+    <button class="btn primary full" type="submit" ${hasAccounts && !operationsBlocked() ? "" : "disabled"}>Enregistrer l’opération</button>`;
   byId("disbursement-form").innerHTML = `
     <label>Ordonnateur<input name="orderedBy" value="${currentUser()?.name || "Utilisateur connecté"}" readonly></label>
     <label>Catégorie<select name="category">${DISBURSEMENT_CATEGORIES.map(([value, label]) => `<option value="${value}" ${state.selectedSupplierInvoiceId && value === "supplier" ? "selected" : ""}>${label}</option>`).join("")}</select></label>
-    <label>Facture fournisseur<select name="supplierInvoiceId"><option value="">Aucune facture fournisseur</option>${payableInvoices.map(invoice => `<option value="${invoice.id}" ${state.selectedSupplierInvoiceId === invoice.id ? "selected" : ""}>${invoice.id} — ${invoice.supplier} — reste ${fmt(Number(invoice.amount) - (Number(invoice.amountPaid) || 0))}</option>`).join("")}</select></label>
-    <label class="is-hidden" data-disbursement-field="salary">Paie à régler<select name="payrollRecordId"><option value="">Sélectionner une dette salariale</option>${payablePayroll.map(record => `<option value="${record.id}">${record.period} — ${record.employeeName} — ${fmt(record.net)}</option>`).join("")}</select></label>
+    <label data-disbursement-field="supplier">Facture fournisseur<select name="supplierInvoiceId"><option value="">Aucune facture fournisseur</option>${payableInvoices.map(invoice => `<option value="${invoice.id}" ${state.selectedSupplierInvoiceId === invoice.id ? "selected" : ""}>${invoice.id} — ${invoice.supplier} — reste ${fmt(Number(invoice.amount) - (Number(invoice.amountPaid) || 0))}</option>`).join("")}</select></label>
+    <label class="is-hidden" data-disbursement-field="salary">Employé et mois de salaire<select name="payrollRecordId"><option value="">Sélectionner l’employé et le mois</option>${payablePayroll.map(record => `<option value="${record.id}">${record.employeeName} · ${record.period} · dû ${fmt(payrollAmountDue(record))}</option>`).join("")}</select></label>
     <label class="is-hidden" data-disbursement-field="social">Organisme / charge<select name="contributionType"><option>CNSS</option><option>AMU</option><option>IRPP</option><option>Autres charges sociales</option></select></label>
     <label class="is-hidden" data-disbursement-field="social">Période<input name="socialPeriod" type="month" value="${today.slice(0, 7)}"></label>
     <label class="full is-hidden" data-disbursement-field="social">Justificatif de paiement<input name="socialReceiptFile" type="file" accept=".pdf,image/*"><small class="hint">Reçu CNSS, AMU ou autre preuve de règlement.</small></label>
-    <label>Bénéficiaire<input name="beneficiary" value=""></label>
-    <label>Dossier<select name="project"><option value="">Aucun dossier</option>${projects.map(p => `<option>${p.name}</option>`).join("")}</select></label>
+    <label data-disbursement-hide="salary,social">Bénéficiaire<input name="beneficiary" value=""></label>
+    <label data-disbursement-hide="salary,social">Dossier<select name="project"><option value="">Aucun dossier</option>${projects.map(p => `<option>${p.name}</option>`).join("")}</select></label>
     <label>Source<select name="sourceId">${accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join("")}</select></label>
     <label>Moyen<select name="paymentMethod"><option>Virement</option><option>Espèces</option><option>Chèque</option><option>Mobile money</option></select></label>
     <label>Montant<input name="amount" type="number" value="0"></label>
     <label class="full">Motif<input name="reason" value=""></label>
     <p class="hint full">${hasAccounts ? "La fiche sera générée après validation." : "Créez d’abord une caisse ou un compte bancaire."}</p>
-    <button class="btn primary full" type="submit" ${hasAccounts && !isDayClosed() ? "" : "disabled"}>Lever la fiche</button>`;
+    <button class="btn primary full" type="submit" ${hasAccounts && !operationsBlocked() ? "" : "disabled"}>Lever la fiche</button>`;
   renderVoucher();
   const operations = scoped("cashOperations");
   byId("cash-operations-table").innerHTML = `<table><thead><tr><th>Date</th><th>Compte</th><th>Destination</th><th>Type</th><th>Catégorie</th><th>Libellé</th><th>Montant</th><th>Trace</th></tr></thead><tbody>${operations.length ? operations.map(op => `<tr><td>${op.date}</td><td>${accountName(op.accountId)}</td><td>${op.targetAccountId ? accountName(op.targetAccountId) : "-"}</td><td>${op.type}</td><td>${disbursementCategoryLabel(op.category)}</td><td>${op.label}</td><td>${fmt(op.amount)}</td><td>${op.trace}</td></tr>`).join("") : `<tr><td colspan="8">Aucune opération enregistrée.</td></tr>`}</tbody></table>`;
@@ -1941,7 +2162,13 @@ function renderCashdesk() {
   const payrollSelect = form.elements.payrollRecordId;
   const updateCategoryFields = () => {
     document.querySelectorAll("[data-disbursement-field]").forEach(field => field.classList.toggle("is-hidden", field.dataset.disbursementField !== categorySelect.value));
+    document.querySelectorAll("[data-disbursement-hide]").forEach(field => field.classList.toggle("is-hidden", field.dataset.disbursementHide.split(",").includes(categorySelect.value)));
     if (categorySelect.value !== "supplier") supplierSelect.value = "";
+    if (categorySelect.value !== "salary") {
+      payrollSelect.value = "";
+      form.elements.amount.removeAttribute("max");
+      delete form.elements.amount.dataset.payrollMaximum;
+    }
   };
   const applySupplierInvoice = () => {
     const invoice = payableInvoices.find(item => item.id === supplierSelect.value);
@@ -1958,8 +2185,10 @@ function renderCashdesk() {
     if (!record) return;
     const employee = scoped("employees").find(item => item.id === record.employeeId);
     form.elements.beneficiary.value = record.employeeName;
-    form.elements.amount.value = record.net;
-    form.elements.reason.value = `Paiement du salaire ${record.period} — ${record.employeeName}`;
+    form.elements.amount.value = payrollAmountDue(record);
+    form.elements.amount.max = payrollAmountDue(record);
+    form.elements.amount.dataset.payrollMaximum = payrollAmountDue(record);
+    form.elements.reason.value = `Paiement du salaire du mois ${record.period} — ${record.employeeName}`;
     form.elements.paymentMethod.value = employee?.rib ? "Virement" : "Chèque";
   };
   supplierSelect.addEventListener("change", applySupplierInvoice);
@@ -2004,7 +2233,7 @@ async function createDisbursement(event) {
   if (data.supplierInvoiceId && !supplierInvoice) return alert("La facture fournisseur sélectionnée est introuvable.");
   const payrollRecord = data.category === "salary" ? state.payrollRecords.find(record => record.id === data.payrollRecordId && record.entityId === state.currentEntityId) : null;
   if (data.category === "salary" && (!payrollRecord || payrollRecord.status !== "Validée" || payrollRecord.paymentStatus === "Payé")) return alert("Sélectionnez une paie validée et non encore réglée.");
-  if (payrollRecord && amount !== Number(payrollRecord.net)) return alert(`Le paiement doit correspondre au net à payer de ${fmt(payrollRecord.net)}.`);
+  if (payrollRecord && amount > payrollAmountDue(payrollRecord)) return alert(`Le paiement ne peut pas dépasser le salaire restant dû de ${fmt(payrollAmountDue(payrollRecord))} pour ${payrollRecord.period}.`);
   if (data.category === "social" && (!data.contributionType || !data.socialPeriod)) return alert("Renseignez l’organisme et la période de la charge sociale.");
   const remaining = supplierInvoice ? Math.max(0, Number(supplierInvoice.amount) - (Number(supplierInvoice.amountPaid) || 0)) : 0;
   if (supplierInvoice && amount > remaining) return alert(`Le montant dépasse le reste à payer de ${fmt(remaining)}.`);
@@ -2018,8 +2247,9 @@ async function createDisbursement(event) {
     supplierInvoice.amountPaid = (Number(supplierInvoice.amountPaid) || 0) + amount;
     state.accountingEntries.unshift({ entityId: state.currentEntityId, id: `REG-${String(scoped("accountingEntries").length + 1).padStart(3, "0")}`, sourceType: "supplier-invoice", sourceId: supplierInvoice.id, date: today, label: `Règlement ${supplierInvoice.supplierReference} — ${supplierInvoice.supplier}`, debit: "Fournisseurs", credit: account.name, amount });
   } else if (payrollRecord) {
-    payrollRecord.paymentStatus = "Payé";
-    payrollRecord.paidDate = today;
+    payrollRecord.amountPaid = (Number(payrollRecord.amountPaid) || 0) + amount;
+    payrollRecord.paymentStatus = payrollAmountDue(payrollRecord) === 0 ? "Payé" : "Partiellement payé";
+    payrollRecord.paidDate = payrollAmountDue(payrollRecord) === 0 ? today : payrollRecord.paidDate;
     payrollRecord.paymentAccountId = account.id;
     payrollRecord.disbursementId = disbursement.id;
     state.accountingEntries.unshift({ entityId: state.currentEntityId, id: `REG-${String(scoped("accountingEntries").length + 1).padStart(3, "0")}`, sourceType: "payroll-payment", sourceId: payrollRecord.id, date: today, label: data.reason, debit: "Personnel — rémunérations dues", credit: account.name, amount });
@@ -2049,7 +2279,16 @@ function voucherMarkup(d) {
 
 function dailyEntries(date = today) {
   const payments = scoped("payments").filter(p => p.date === date).map(p => ({ date: p.date, nature: "Paiement", label: p.invoiceId, accountId: p.destinationId, amount: p.amount, trace: p.id }));
-  const ops = scoped("cashOperations").filter(op => op.date === date).map(op => ({ date: op.date, nature: op.type, label: op.label, accountId: op.accountId, amount: ["Sortie", "Sortie par chèque", "Transfert bancaire"].includes(op.type) ? -op.amount : op.amount, trace: op.trace }));
+  const ops = scoped("cashOperations").filter(op => op.date === date).flatMap(op => {
+    if (op.type === "Transfert bancaire" && op.targetAccountId) {
+      const value = Number(op.transferValue ?? op.amount) || 0;
+      return [
+        { date: op.date, nature: "Transfert émis", label: op.label, accountId: op.accountId, amount: -value, trace: op.trace },
+        { date: op.date, nature: "Transfert reçu", label: op.label, accountId: op.targetAccountId, amount: value, trace: op.trace }
+      ];
+    }
+    return [{ date: op.date, nature: op.type, label: op.label, accountId: op.accountId, amount: ["Sortie", "Sortie par chèque"].includes(op.type) ? -op.amount : op.amount, trace: op.trace }];
+  });
   return [...payments, ...ops];
 }
 
@@ -2067,7 +2306,7 @@ function closureReportMarkup(closure) {
       <span><strong>Référence</strong>${closure.id}</span>
       <span><strong>Société</strong>${currentEntity().name}</span>
       <span><strong>Établi par</strong>${closure.by || currentUser()?.name || "Utilisateur"}</span>
-      <span><strong>Type</strong>${closure.early ? "Arrêté anticipé" : "Arrêté journalier"}</span>
+      <span><strong>Type</strong>${closure.early ? "Arrêté anticipé" : closure.automatic ? "Arrêté automatique" : "Arrêté journalier"}</span>
     </div>
     <div class="closure-summary-grid">
       <div><span>Total entrées</span><strong>${fmt(inflows)}</strong></div>
@@ -2099,7 +2338,7 @@ function renderDailyOps() {
     ["Total arrêté", cash + bank, "Base de clôture"]
   ].map(item => `<article class="metric-card"><span>${item[0]}</span><strong>${typeof item[1] === "number" && item[0] !== "Paiements + opérations" ? fmt(item[1]) : item[1]}</strong><small>${item[2]}</small></article>`).join("");
   byId("daily-entries-table").innerHTML = `<table><thead><tr><th>Date</th><th>Nature</th><th>Compte</th><th>Libellé</th><th>Montant</th></tr></thead><tbody>${entries.map(e => `<tr><td>${e.date}</td><td>${e.nature}</td><td>${accountName(e.accountId)}</td><td>${e.label}</td><td>${fmt(e.amount)}</td></tr>`).join("")}</tbody></table>`;
-  byId("closure-list").innerHTML = scoped("closures").map(c => `<div class="activity-item"><div class="row-between"><strong>${c.id}</strong><span>${fmt(c.total)}</span></div><span class="hint">${c.date} - Caisse ${fmt(c.cash)} - Banque ${fmt(c.bank)} - ${c.operations} écriture(s)${c.early ? " - Arrêté anticipé" : ""}</span>${c.reason ? `<span class="hint">Cause : ${c.reason}</span>` : ""}<button class="link-button" data-download-closure="${c.id}">Télécharger l’arrêté</button></div>`).join("");
+  byId("closure-list").innerHTML = scoped("closures").map(c => `<div class="activity-item"><div class="row-between"><strong>${c.id}</strong><span>${fmt(c.total)}</span></div><span class="hint">${c.date} - Caisse ${fmt(c.cash)} - Banque ${fmt(c.bank)} - ${c.operations} écriture(s)${c.early ? " - Arrêté anticipé" : c.automatic ? " - Arrêté automatique" : ""}</span>${c.reason ? `<span class="hint">Cause : ${c.reason}</span>` : ""}<button class="link-button" data-download-closure="${c.id}">Télécharger l’arrêté</button></div>`).join("");
   document.querySelectorAll("[data-download-closure]").forEach(button => button.addEventListener("click", () => downloadClosureReport(button.dataset.downloadClosure)));
   renderOperationSearch();
   updateCloseAvailability();
@@ -2131,8 +2370,29 @@ function closeDay() {
   if (isDayClosed()) return;
   const { entries, cash, bank } = closureTotals();
   state.closures.unshift({ entityId: state.currentEntityId, id: `ARR-${state.currentEntityId}-${today}`, date: today, total: cash + bank, cash, bank, operations: entries.length, by: currentUser()?.name || "Utilisateur", reportName: `Situation caisse ${today}` });
-  state.dayClosedByEntity[state.currentEntityId] = true;
+  state.dayClosedByEntity[state.currentEntityId] = today;
   renderAll();
+}
+
+function closeDayAutomatically() {
+  if (isDayClosed() || new Date().getHours() < 22) return false;
+  const { entries, cash, bank } = closureTotals();
+  state.closures.unshift({ entityId: state.currentEntityId, id: `ARR-AUTO-${state.currentEntityId}-${today}`, date: today, total: cash + bank, cash, bank, operations: entries.length, by: "FinanceOS", automatic: true, reportName: `Situation caisse ${today}` });
+  state.dayClosedByEntity[state.currentEntityId] = today;
+  persistState();
+  return true;
+}
+
+function backfillAutomaticClosures() {
+  const dates = [...new Set([
+    ...scoped("payments").map(item => item.date),
+    ...scoped("cashOperations").map(item => item.date)
+  ].filter(date => date && date < today && !scoped("closures").some(closure => closure.date === date)))];
+  dates.forEach(date => {
+    const { entries, cash, bank } = closureTotals(date);
+    state.closures.unshift({ entityId: state.currentEntityId, id: `ARR-AUTO-${state.currentEntityId}-${date}`, date, total: cash + bank, cash, bank, operations: entries.length, by: "FinanceOS", automatic: true, reportName: `Situation caisse ${date}` });
+  });
+  return dates.length;
 }
 
 function isCloseAvailable() {
@@ -2147,6 +2407,15 @@ function updateCloseAvailability() {
   const earlyButton = byId("early-close-btn");
   const countdown = byId("close-countdown");
   if (!button || !countdown) return;
+  if (backfillAutomaticClosures()) {
+    persistState();
+    renderAll();
+    return;
+  }
+  if (closeDayAutomatically()) {
+    renderAll();
+    return;
+  }
   if (isDayClosed()) {
     button.disabled = true;
     button.classList.add("disabled");
@@ -2154,7 +2423,7 @@ function updateCloseAvailability() {
       earlyButton.disabled = true;
       earlyButton.classList.add("disabled");
     }
-    countdown.textContent = "Journée arrêtée";
+    countdown.textContent = scoped("closures").some(closure => closure.date === today && closure.automatic) ? "Arrêté automatique effectué" : "Journée arrêtée";
     countdown.className = "pill ready";
     return;
   }
@@ -2168,7 +2437,7 @@ function updateCloseAvailability() {
   if (now >= cutoff) {
     button.disabled = false;
     button.classList.remove("disabled");
-    countdown.textContent = "Arrêté disponible";
+    countdown.textContent = "Arrêté disponible · automatique à 22h";
     countdown.className = "pill ready";
     return;
   }
@@ -2178,7 +2447,7 @@ function updateCloseAvailability() {
   const seconds = Math.floor((diff % 60000) / 1000);
   button.disabled = true;
   button.classList.add("disabled");
-  countdown.textContent = `Disponible dans ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  countdown.textContent = `Disponible dans ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")} · auto à 22h`;
   countdown.className = "pill danger";
 }
 
@@ -2191,7 +2460,13 @@ function renderAccounts() {
   byId("account-detail-title").textContent = account ? `État - ${account.name}` : "État du compte";
   const rows = account ? accountMovements(account) : [];
   byId("account-detail").innerHTML = `<table><thead><tr><th>Date</th><th>Nature</th><th>Libellé</th><th>Montant</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.date}</td><td>${r.type}</td><td>${r.label}</td><td>${fmt(r.amount)}</td></tr>`).join("")}</tbody></table>`;
-  byId("reconciliation-list").innerHTML = (scoped("statements").length ? scoped("statements") : [{ name: "Aucun relevé importé", date: "-", status: "En attente", matches: 0 }]).map(s => `<div class="activity-item"><div class="row-between"><strong>${s.name}</strong><span class="status ready">${s.status}</span></div><span class="hint">${s.date} - ${s.matches} rapprochement(s) probable(s)</span></div>`).join("");
+  const banks = bankAccounts().filter(item => item.status !== "Clôturé" && item.status !== "Archivé");
+  const statementSelect = byId("statement-account-select");
+  statementSelect.innerHTML = banks.length ? banks.map(item => `<option value="${item.id}">${item.name} · ${item.institution || "Banque"}</option>`).join("") : `<option value="">Aucun compte bancaire actif</option>`;
+  statementSelect.disabled = !banks.length;
+  byId("statement-upload").disabled = !banks.length;
+  byId("statement-upload-label").classList.toggle("disabled", !banks.length);
+  byId("reconciliation-list").innerHTML = (scoped("statements").length ? scoped("statements") : [{ name: "Aucun relevé importé", date: "-", status: "En attente", matches: 0, accountId: "" }]).map(s => `<div class="activity-item"><div class="row-between"><strong>${s.name}</strong><span class="status ready">${s.status}</span></div><span class="hint">${s.accountId ? accountName(s.accountId) : "Aucun compte lié"} · ${s.date} · ${s.matches} rapprochement(s) probable(s)</span></div>`).join("");
   renderAccountPage();
 }
 
@@ -2201,7 +2476,8 @@ function accountMovements(account) {
     ...scoped("payments").filter(p => p.destinationId === account.id).map(p => ({ date: p.date, label: p.invoiceId, type: "Paiement", amount: p.amount })),
     ...scoped("cashOperations").filter(op => op.accountId === account.id || op.targetAccountId === account.id).map(op => {
       const incomingTransfer = op.targetAccountId === account.id;
-      return { date: op.date, label: op.label, type: incomingTransfer ? "Transfert reçu" : op.type, amount: incomingTransfer ? op.amount : (["Sortie", "Sortie par chèque", "Transfert bancaire"].includes(op.type) ? -op.amount : op.amount) };
+      const transferValue = Number(op.transferValue ?? op.amount) || 0;
+      return { date: op.date, label: op.label, type: incomingTransfer ? "Transfert reçu" : op.type, amount: op.type === "Transfert bancaire" ? (incomingTransfer ? transferValue : -transferValue) : (["Sortie", "Sortie par chèque"].includes(op.type) ? -op.amount : op.amount) };
     })
   ];
 }
@@ -2212,27 +2488,16 @@ function renderAccountPage() {
   byId("account-page-title").textContent = account.name;
   byId("account-page-subtitle").textContent = account.type === "Banque" ? "Coordonnées bancaires et mouvements détaillés." : "Détail de caisse et mouvements.";
   const detailRows = account.type === "Banque"
-    ? [["Titulaire", account.holder], ["Établissement", account.institution], ["Numéro de compte", account.number], ["Domiciliation", account.domiciliation], ["IBAN / RIB", account.rib], ["SWIFT / BIC", account.swift], ["RIP / RIB uploadé", account.ribFileName || "Aucun fichier"], ["Gestionnaire", account.manager], ["Motif clôture", account.closureReason || "-"]]
+    ? [["Titulaire", account.holder], ["Établissement", account.institution], ["Numéro de compte", account.number], ["Domiciliation", account.domiciliation], ["IBAN / RIB", account.rib], ["SWIFT / BIC", account.swift], ["RIB uploadé", account.ribFileName || "Aucun fichier"], ["Gestionnaire", account.manager], ["Motif d’archivage", account.closureReason || "-"]]
     : [["Type", "Caisse"], ["Domiciliation", account.domiciliation || "Interne"], ["Responsable", account.manager || "Non renseigné"], ["Motif clôture", account.closureReason || "-"]];
   byId("account-profile").innerHTML = `
     <section class="panel account-profile-card"><div class="panel-head"><h2>Résumé</h2><span class="status ${account.status === "Clôturé" ? "due" : "ready"}">${account.status || account.type}</span></div><strong>${fmt(account.balance)}</strong><p class="hint">Solde actuel</p><div class="account-chart">${accountMovements(account).slice(0, 8).map((move, index) => `<i style="height:${Math.max(12, Math.min(100, Math.abs(move.amount) / Math.max(Math.abs(account.balance), 1) * 100 + 12 + index * 3))}%"></i>`).join("") || "<span class='hint'>Aucun mouvement</span>"}</div></section>
-    <section class="panel"><div class="settings-list">${detailRows.map(row => `<div><strong>${row[0]}</strong><span>${row[1] || "-"}</span></div>`).join("")}</div><div class="inline-actions">${account.ribFileName ? `<button class="btn ghost download-rib-btn" type="button">Télécharger le RIP</button>` : ""}<button class="btn ghost close-account-btn" type="button">Clôturer</button><button class="btn ghost danger-text delete-account-btn" type="button">Supprimer</button></div></section>
-    <section class="panel full"><div class="panel-head"><h2>Modifier les informations</h2><p>Informations générales et bancaires.</p></div><form id="account-edit-form" class="form-grid">
-      <label>Nom<input name="name" value="${account.name || ""}"></label>
-      <label>Titulaire<input name="holder" value="${account.holder || ""}"></label>
-      <label>Établissement<input name="institution" value="${account.institution || ""}"></label>
-      <label>Numéro de compte<input name="number" value="${account.number || ""}"></label>
-      <label>Domiciliation<input name="domiciliation" value="${account.domiciliation || ""}"></label>
-      <label>IBAN / RIB<input name="rib" value="${account.rib || ""}"></label>
-      <label>SWIFT / BIC<input name="swift" value="${account.swift || ""}"></label>
-      <label>Gestionnaire<input name="manager" value="${account.manager || ""}"></label>
-      <button class="btn primary full" type="submit">Enregistrer les modifications</button>
-    </form></section>`;
+    <section class="panel"><div class="settings-list">${detailRows.map(row => `<div><strong>${row[0]}</strong><span>${row[1] || "-"}</span></div>`).join("")}</div><div class="inline-actions">${account.ribFileName ? `<button class="btn ghost download-rib-btn" type="button">Télécharger le RIB</button>` : ""}${!['Clôturé','Archivé'].includes(account.status) ? `<button class="btn ghost edit-account-btn" type="button">Modifier</button><button class="btn ghost close-account-btn" type="button">Clôturer</button><button class="btn ghost danger-text delete-account-btn" type="button">Archiver</button>` : `<span class="pill">Compte archivé · historique conservé</span>`}</div></section>`;
   const downloadButton = document.querySelector(".download-rib-btn");
   if (downloadButton) downloadButton.addEventListener("click", () => createSystemPdf({ filename: `${account.id}-RIB.pdf`, title: "RELEVE D'IDENTITE BANCAIRE", reference: account.id, date: today, infoRows: [["Titulaire", account.holder || currentEntity().name], ["Banque", account.institution || account.name], ["Numero de compte", account.number || "-"], ["Domiciliation", account.domiciliation || "-"], ["RIB / IBAN", account.rib || "-"], ["SWIFT / BIC", account.swift || "-"]] }));
-  document.querySelector(".close-account-btn")?.addEventListener("click", () => closeAccount(account.id));
-  document.querySelector(".delete-account-btn")?.addEventListener("click", () => deleteAccount(account.id));
-  byId("account-edit-form").addEventListener("submit", saveAccountDetails);
+  document.querySelector(".edit-account-btn")?.addEventListener("click", () => openAccountEditModal(account.id));
+  document.querySelector(".close-account-btn")?.addEventListener("click", () => openAccountArchiveModal(account.id, "close"));
+  document.querySelector(".delete-account-btn")?.addEventListener("click", () => openAccountArchiveModal(account.id, "archive"));
   byId("account-page-movements").innerHTML = `<table><thead><tr><th>Date</th><th>Nature</th><th>Libellé</th><th>Montant</th></tr></thead><tbody>${accountMovements(account).map(r => `<tr><td>${r.date}</td><td>${r.type}</td><td>${r.label}</td><td>${fmt(r.amount)}</td></tr>`).join("")}</tbody></table>`;
 }
 
@@ -2241,28 +2506,64 @@ function saveAccountDetails(event) {
   const account = state.accounts.find(item => item.id === state.selectedAccountId);
   if (!account) return;
   Object.assign(account, Object.fromEntries(new FormData(event.currentTarget)));
+  closeAccountEditModal();
   renderAccounts();
   renderAccountPage();
 }
 
-function closeAccount(id) {
-  const account = state.accounts.find(item => item.id === id);
+function openAccountEditModal(id) {
+  const account = scoped("accounts").find(item => item.id === id);
   if (!account) return;
-  const reason = prompt("Motif de clôture du compte");
-  if (!reason) return;
-  account.status = "Clôturé";
-  account.closureReason = reason;
-  renderAll();
-  navigate("account-detail-view");
+  const form = byId("account-edit-form");
+  ["name", "holder", "institution", "number", "domiciliation", "rib", "swift", "manager"].forEach(field => { form.elements[field].value = account[field] || ""; });
+  byId("account-edit-modal").classList.remove("is-hidden");
 }
 
-function deleteAccount(id) {
-  const used = state.payments.some(payment => payment.destinationId === id) || state.cashOperations.some(op => op.accountId === id || op.targetAccountId === id);
-  if (used) return alert("Ce compte contient des mouvements. Clôturez-le plutôt que de le supprimer.");
-  state.accounts = state.accounts.filter(account => account.id !== id);
-  state.selectedAccountId = scoped("accounts")[0]?.id || "";
-  navigate("accounts");
+function closeAccountEditModal() {
+  byId("account-edit-modal").classList.add("is-hidden");
+}
+
+function openAccountArchiveModal(id, action) {
+  const account = scoped("accounts").find(item => item.id === id);
+  if (!account) return;
+  const targets = scoped("accounts").filter(item => item.id !== id && !["Clôturé", "Archivé"].includes(item.status));
+  if (Number(account.balance) !== 0 && !targets.length) return alert("Créez un autre compte actif pour y reporter le solde avant l’archivage.");
+  const form = byId("account-archive-form");
+  form.reset();
+  form.elements.accountId.value = id;
+  form.elements.action.value = action;
+  form.elements.targetAccountId.innerHTML = targets.length ? targets.map(item => `<option value="${item.id}">${item.name} · ${fmt(item.balance)}</option>`).join("") : `<option value="">Aucun report nécessaire (solde nul)</option>`;
+  form.elements.targetAccountId.required = Number(account.balance) !== 0;
+  byId("account-archive-title").textContent = action === "close" ? "Clôturer le compte" : "Archiver le compte";
+  byId("account-archive-submit").textContent = action === "close" ? "Reporter le solde et clôturer" : "Reporter le solde et archiver";
+  byId("account-archive-modal").classList.remove("is-hidden");
+}
+
+function closeAccountArchiveModal() {
+  byId("account-archive-modal").classList.add("is-hidden");
+}
+
+function archiveAccount(event) {
+  event.preventDefault();
+  if (blockIfDayClosed()) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  const account = scoped("accounts").find(item => item.id === data.accountId);
+  const target = scoped("accounts").find(item => item.id === data.targetAccountId);
+  if (!account) return;
+  const balance = Number(account.balance) || 0;
+  if (balance !== 0 && !target) return alert("Sélectionnez le compte qui recevra le solde.");
+  if (target && balance !== 0) {
+    target.balance = (Number(target.balance) || 0) + balance;
+    account.balance = 0;
+    state.cashOperations.unshift({ entityId: state.currentEntityId, id: `OP-${String(scoped("cashOperations").length + 1).padStart(3, "0")}`, accountId: account.id, targetAccountId: target.id, type: "Transfert bancaire", amount: Math.abs(balance), transferValue: balance, date: today, label: `Report de solde avant ${data.action === "close" ? "clôture" : "archivage"}`, trace: `ARCH-${account.id}` });
+  }
+  account.status = data.action === "close" ? "Clôturé" : "Archivé";
+  account.closureReason = data.reason;
+  account.archivedAt = new Date().toISOString();
+  account.balanceTransferredTo = target?.id || "";
+  closeAccountArchiveModal();
   renderAll();
+  navigate("account-detail-view");
 }
 
 function openAccountModal() {
@@ -2436,6 +2737,8 @@ function renderSignerSettings() {
   form.elements.proformaSignerEmail.innerHTML = options(settings.signers.proforma);
   form.elements.receiptSignerEmail.innerHTML = options(settings.signers.receipt);
   form.elements.payrollSignerEmail.innerHTML = options(settings.signers.payroll);
+  form.elements.invoiceReferenceTemplate.value = settings.invoiceReferenceTemplate || defaultReferenceTemplates.invoice;
+  form.elements.proformaReferenceTemplate.value = settings.proformaReferenceTemplate || defaultReferenceTemplates.proforma;
   const payrollForm = byId("payroll-settings-form");
   const rules = currentPayrollRules();
   Object.keys(rules).forEach(key => { if (payrollForm.elements[key]) payrollForm.elements[key].value = rules[key]; });
@@ -2575,7 +2878,7 @@ function renderProfile() {
   byId("profile-logout-btn").addEventListener("click", () => byId("logout-btn").click());
   const employee = scoped("employees").find(item => item.email && item.email === user?.email);
   const records = employee ? scoped("payrollRecords").filter(record => record.employeeId === employee.id) : [];
-  byId("employee-profile-summary").innerHTML = employee ? `<div><strong>Employé</strong><span>${employee.name}</span></div><div><strong>Poste</strong><span>${employee.position}</span></div><div><strong>Salaire de base</strong><span>${fmt(employee.baseSalary)}</span></div><div><strong>Dernier net calculé</strong><span>${records[0] ? fmt(records[0].net) : "Aucune paie"}</span></div>${records.slice(0, 4).map(record => `<div><strong>${record.period}</strong><button class="link-button" data-profile-payslip="${record.id}">Bulletin</button></div>`).join("")}` : `<p class="hint">Aucun dossier employé n’est associé à votre adresse email.</p>`;
+  byId("employee-profile-summary").innerHTML = employee ? `<div><strong>Employé</strong><span>${employee.name}</span></div><div><strong>Poste</strong><span>${employee.position}</span></div><div><strong>Salaire de base</strong><span>${fmt(employee.baseSalary)}</span></div><div><strong>Salaires dus</strong><span>${fmt(employeePayrollDebt(employee.id))}</span></div><div><strong>Mois concernés</strong><span>${employeePayrollDebtPeriods(employee.id).join(", ") || "Aucun"}</span></div>${records.slice(0, 4).map(record => `<div><strong>${record.period}</strong><button class="link-button" data-profile-payslip="${record.id}">Bulletin</button></div>`).join("")}` : `<p class="hint">Aucun dossier employé n’est associé à votre adresse email.</p>`;
   document.querySelectorAll("[data-profile-payslip]").forEach(button => button.addEventListener("click", () => downloadPayslip(button.dataset.profilePayslip)));
 }
 
@@ -2744,7 +3047,7 @@ function createClientFromInvoice(event) {
   delete data.logoFile;
   readImageFile(file, logoDataUrl => {
     const logo = data.logo || data.company.slice(0, 2).toUpperCase();
-    state.contacts.unshift({ entityId: state.currentEntityId, type: "client", ...data, logo, logoDataUrl });
+    state.contacts.unshift({ entityId: state.currentEntityId, id: `CONTACT-${Date.now()}`, type: "client", partyType: "company", ...data, logo, logoDataUrl, people: data.person ? [{ name: data.person, phone: data.phone || "", email: data.email || "", role: "" }] : [] });
     const invoice = selectedInvoice();
     if (invoice) invoice.client = data.company;
     form.reset();
@@ -2769,7 +3072,7 @@ function submitEarlyClose(event) {
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const { entries, cash, bank, total } = closureTotals();
   state.closures.unshift({ entityId: state.currentEntityId, id: `ARR-ANT-${state.currentEntityId}-${today}`, date: today, total, cash, bank, operations: entries.length, by: currentUser()?.name || "Utilisateur", early: true, reason: data.reason, reportName: `Situation caisse ${today}` });
-  state.dayClosedByEntity[state.currentEntityId] = true;
+  state.dayClosedByEntity[state.currentEntityId] = today;
   event.currentTarget.reset();
   closeEarlyCloseModal();
   alert("Arrêté anticipé confirmé. Aucune nouvelle opération ne pourra être saisie aujourd’hui.");
@@ -2780,6 +3083,8 @@ function saveSettings(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const settings = currentSettings();
+  if (!String(data.invoiceReferenceTemplate || "").includes("{SEQ}")) return alert("La syntaxe des factures doit contenir la variable {SEQ}.");
+  if (!String(data.proformaReferenceTemplate || "").includes("{SEQ}")) return alert("La syntaxe des proformas doit contenir la variable {SEQ}.");
   settings.brandName = data.brandName;
   settings.tagline = data.tagline;
   settings.signers = {
@@ -2790,6 +3095,8 @@ function saveSettings(event) {
   };
   settings.footer = data.footer;
   settings.terms = data.terms;
+  settings.invoiceReferenceTemplate = data.invoiceReferenceTemplate.trim();
+  settings.proformaReferenceTemplate = data.proformaReferenceTemplate.trim();
   renderAll();
 }
 
@@ -2937,13 +3244,36 @@ async function createSystemPdf(options) {
   };
   const ensureSpace = height => { if (y - height < 72) addPage(); };
   addPage();
-  page.drawText(pdfText(options.title), { x: margin, y, size: 18, font: bold, color: rgb(.11, .11, .11) });
-  if (options.reference) page.drawText(pdfText(options.reference), { x: margin, y: y - 22, size: 9, font: bold, color: rgb(.98, .28, .12) });
-  if (options.date) {
-    const dateLabel = `Lome, le ${formatDate(options.date)}`;
-    page.drawText(pdfText(dateLabel), { x: pageWidth - margin - regular.widthOfTextAtSize(pdfText(dateLabel), 9), y: y - 22, size: 9, font: regular });
+  if (options.financialMeta) {
+    if (options.reference) page.drawText(pdfText(options.reference), { x: margin, y, size: 9, font: bold, color: rgb(.11, .11, .11) });
+    if (options.date) {
+      const dateLabel = `Lome, le ${formatDate(options.date)}`;
+      page.drawText(pdfText(dateLabel), { x: pageWidth - margin - regular.widthOfTextAtSize(pdfText(dateLabel), 9), y, size: 9, font: regular });
+    }
+    y -= 42;
+    const columnWidth = (pageWidth - margin * 2 - 34) / 2;
+    const concernLabel = "Concerne :";
+    page.drawText(concernLabel, { x: margin, y, size: 9, font: bold });
+    page.drawLine({ start: { x: margin, y: y - 2 }, end: { x: margin + bold.widthOfTextAtSize(concernLabel, 9), y: y - 2 }, thickness: .6, color: rgb(.11, .11, .11) });
+    const concernLines = wrapPdfText(regular, options.financialMeta.subject || "-", 9, columnWidth - 62);
+    concernLines.forEach((line, index) => page.drawText(line, { x: margin + 62, y: y - index * 12, size: 9, font: regular }));
+    const clientX = margin + columnWidth + 34;
+    page.drawText("Client :", { x: clientX, y, size: 9, font: bold });
+    const clientLines = wrapPdfText(regular, options.financialMeta.client || "-", 9, columnWidth - 48);
+    clientLines.forEach((line, index) => page.drawText(line, { x: clientX + 48, y: y - index * 12, size: 9, font: regular }));
+    y -= Math.max(concernLines.length, clientLines.length) * 12 + 30;
+    const titleText = pdfText(`${options.title} N°${options.financialMeta.number || ""} (CFA)`);
+    page.drawText(titleText, { x: Math.max(margin, (pageWidth - bold.widthOfTextAtSize(titleText, 18)) / 2), y, size: 18, font: bold, color: rgb(.11, .11, .11) });
+    y -= 38;
+  } else {
+    page.drawText(pdfText(options.title), { x: margin, y, size: 18, font: bold, color: rgb(.11, .11, .11) });
+    if (options.reference) page.drawText(pdfText(options.reference), { x: margin, y: y - 22, size: 9, font: bold, color: rgb(.98, .28, .12) });
+    if (options.date) {
+      const dateLabel = `Lome, le ${formatDate(options.date)}`;
+      page.drawText(pdfText(dateLabel), { x: pageWidth - margin - regular.widthOfTextAtSize(pdfText(dateLabel), 9), y: y - 22, size: 9, font: regular });
+    }
+    y -= 54;
   }
-  y -= 54;
   (options.infoRows || []).forEach(([label, value]) => {
     ensureSpace(22);
     page.drawText(pdfText(label), { x: margin, y, size: 9, font: bold, color: rgb(.28, .3, .33) });
@@ -3031,10 +3361,11 @@ async function createSystemPdf(options) {
 function downloadFinancialPdf(documentData, title) {
   const isInvoice = title === "FACTURE";
   const account = isInvoice ? paymentAccount(documentData) : null;
-  const notes = [`Arretee la presente ${isInvoice ? "facture" : "proforma"} a la somme totale de ${fmt(invoiceTotal(documentData))} HT.`];
+  const total = invoiceTotal(documentData);
+  const notes = [`Arretee la presente ${isInvoice ? "facture" : "proforma"} a la somme totale de ${numberToFrenchWords(total)} francs CFA HT (${fmt(total)}).`];
   if (account) notes.push(`Coordonnees bancaires : ${account.holder || currentEntity().name} | ${account.institution || account.name} | Compte ${account.number || "-"} | RIB/IBAN ${account.rib || "-"} | SWIFT ${account.swift || "-"}`);
   if (!isInvoice) notes.push(currentSettings().terms || "");
-  return createSystemPdf({ filename: `${documentData.id}.pdf`, title, reference: documentData.reference, date: documentData.date, infoRows: [["Client", documentData.client], ["Objet", documentData.subject], ["Pour", documentData.purpose], ["Dossier", documentData.project || "Non lie"]], headers: ["Ref", "Designation", "P.U", "Qte", "Cout"], widths: [58, 236, 70, 48, 91], rows: documentData.lines.map(line => line.type === "section" ? ["", line.title, "", "", ""] : [line.ref, line.label, fmt(line.unit), line.qty, fmt(lineTotal(line))]), summaryRows: [["TOTAL", fmt(invoiceTotal(documentData))]], notes, signatureKind: isInvoice ? "invoice" : "proforma", signatureLabel: "Signataire autorise" });
+  return createSystemPdf({ filename: `${documentData.id}.pdf`, title, reference: documentData.reference, date: documentData.date, financialMeta: { subject: documentData.subject, client: documentData.client, number: documentData.number }, infoRows: [["Pour", documentData.purpose], ["Dossier", documentData.project || "Non lie"]], headers: ["Ref", "Designation", "P.U", "Qte", "Remise", "Cout"], widths: [43, 215, 67, 42, 55, 81], rows: documentData.lines.map(line => line.type === "section" ? ["", line.title, "", "", "", ""] : [line.ref, line.label, fmt(line.unit), line.qty, `${Number(line.discountPercent) || 0}%`, fmt(lineTotal(line))]), summaryRows: [["TOTAL", fmt(total)]], notes, signatureKind: isInvoice ? "invoice" : "proforma", signatureLabel: "Signataire autorise" });
 }
 
 function downloadReceiptPdf(receipt) {
@@ -3053,12 +3384,15 @@ function downloadPurchaseOrderPdf(order) {
 
 function downloadPayslipPdf(record) {
   const employee = state.employees.find(item => item.id === record.employeeId);
-  return createSystemPdf({ filename: `${record.id}.pdf`, title: "BULLETIN DE PAIE", reference: `Periode ${record.period}`, date: `${record.period}-28`, infoRows: [["Employe", record.employeeName], ["Poste", employee?.position || "-"], ["Contrat", employee?.contractType || "-"], ["Numero CNSS", employee?.cnssNumber || "-"], ["Etat", `${record.status}${record.paymentStatus ? ` - ${record.paymentStatus}` : ""}`]], headers: ["Element", "Base", "Retenue", "Gain"], widths: [220, 95, 94, 94], rows: [["Salaire de base", fmt(record.baseSalary), "-", fmt(record.baseSalary)], ["Primes fixes", fmt(record.allowances), "-", fmt(record.allowances)], ["CNSS salarie", fmt(record.gross), fmt(record.cnssEmployee), "-"], ["AMU salarie", fmt(record.gross), fmt(record.amuEmployee), "-"], ["IRPP provisoire", fmt(record.gross), fmt(record.irpp), "-"]], summaryRows: [["NET A PAYER", fmt(record.net)]], notes: record.paidDate ? [`Salaire regle le ${formatDate(record.paidDate)} par la fiche ${record.disbursementId}.`] : [], signatureKind: "payroll", signatureLabel: "Responsable de la paie" });
+  const rules = currentPayrollRules();
+  const notes = ["Assiette CNSS : salaire de base et primes soumises. Les remboursements de frais professionnels sont exclus de l'assiette."];
+  if (record.paidDate) notes.push(`Salaire regle le ${formatDate(record.paidDate)} par la fiche ${record.disbursementId}.`);
+  return createSystemPdf({ filename: `${record.id}.pdf`, title: "BULLETIN DE PAIE", reference: `Periode ${record.period}`, date: `${record.period}-28`, infoRows: [["Employe", record.employeeName], ["Poste", employee?.position || "-"], ["Contrat", employee?.contractType || "-"], ["Numero CNSS", employee?.cnssNumber || "-"], ["Etat du paiement", `${record.paymentStatus || "Non paye"} - reste ${fmt(payrollAmountDue(record))}`]], headers: ["Element", "Base", "Taux", "Gain", "Retenue"], widths: [190, 92, 55, 83, 83], rows: [["Salaire de base", fmt(record.baseSalary), "-", fmt(record.baseSalary), "-"], ["Primes soumises", fmt(record.allowances), "-", fmt(record.allowances), "-"], ["Remboursements de frais", fmt(record.expenseReimbursements || 0), "Hors assiette", fmt(record.expenseReimbursements || 0), "-"], ["CNSS salarie", fmt(record.cnssBase || record.gross), `${rules.cnssEmployee}%`, "-", fmt(record.cnssEmployee)], ["AMU salarie", fmt(record.gross), `${rules.amuEmployee}%`, "-", fmt(record.amuEmployee)], ["IRPP provisoire", fmt(Math.max(0, record.gross - record.cnssEmployee - record.amuEmployee)), `${rules.irppRate}%`, "-", fmt(record.irpp)]], summaryRows: [["NET A PAYER", fmt(record.net)]], notes, signatureKind: "payroll", signatureLabel: "Responsable de la paie" });
 }
 
 function downloadClosurePdf(closure) {
   const entries = dailyEntries(closure.date);
-  return createSystemPdf({ filename: `${closure.id}.pdf`, title: "SITUATION DE CAISSE", reference: closure.id, date: closure.date, infoRows: [["Societe", currentEntity().name], ["Etabli par", closure.by], ["Type", closure.early ? "Arrete anticipe" : "Arrete journalier"]], headers: ["Date", "Nature", "Compte", "Libelle", "Reference", "Entree", "Sortie"], widths: [58, 65, 75, 120, 65, 60, 60], rows: entries.map(entry => [entry.date, entry.nature, accountName(entry.accountId), entry.label, entry.trace || "-", entry.amount > 0 ? fmt(entry.amount) : "-", entry.amount < 0 ? fmt(Math.abs(entry.amount)) : "-"]), summaryRows: [["TOTAL ARRETE", fmt(closure.total)]], notes: closure.reason ? [`Motif : ${closure.reason}`] : [], signatures: [{ label: "Responsable finance", name: closure.by }, { label: "Caissier" }] });
+  return createSystemPdf({ filename: `${closure.id}.pdf`, title: "SITUATION DE CAISSE", reference: closure.id, date: closure.date, infoRows: [["Societe", currentEntity().name], ["Etabli par", closure.by], ["Type", closure.early ? "Arrete anticipe" : closure.automatic ? "Arrete automatique" : "Arrete journalier"]], headers: ["Date", "Nature", "Compte", "Libelle", "Reference", "Entree", "Sortie"], widths: [58, 65, 75, 120, 65, 60, 60], rows: entries.map(entry => [entry.date, entry.nature, accountName(entry.accountId), entry.label, entry.trace || "-", entry.amount > 0 ? fmt(entry.amount) : "-", entry.amount < 0 ? fmt(Math.abs(entry.amount)) : "-"]), summaryRows: [["TOTAL ARRETE", fmt(closure.total)]], notes: closure.reason ? [`Motif : ${closure.reason}`] : [], signatures: [{ label: "Responsable finance", name: closure.by }, { label: "Caissier" }] });
 }
 
 function download(filename, mime, content) {

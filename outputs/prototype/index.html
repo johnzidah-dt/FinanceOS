@@ -10,17 +10,10 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/financeos-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icons/financeos-icon.svg">
-    <link rel="stylesheet" href="./styles.css?v=27">
+    <link rel="stylesheet" href="./styles.css?v=28">
   </head>
   <body>
     <section id="login-screen" class="login-screen">
-      <div class="login-art">
-        <div>
-          <p class="eyebrow">Finance OS</p>
-          <h1>Un espace financier par société.</h1>
-          <p>Factures, paiements, caisse, banque, arrêtés journaliers, dossiers et justificatifs dans une interface claire.</p>
-        </div>
-      </div>
       <form id="login-form" class="login-card">
         <div class="brand-row">
           <span class="brand-icon">F</span>
@@ -387,7 +380,7 @@
           <div class="section-actions">
             <div><h2>Opérations journalières</h2><p>Arrêté consolidé des paiements, opérations de caisse et opérations de banque.</p></div>
             <div class="inline-actions">
-              <span id="close-countdown" class="pill ready">Arrêté disponible à 17h30</span>
+              <span id="close-countdown" class="pill ready">Arrêté manuel à 17h30 · automatique à 22h</span>
               <button id="early-close-btn" class="btn ghost">Arrêté anticipé</button>
               <button id="daily-close-btn" class="btn primary">Faire l’arrêté du jour</button>
             </div>
@@ -421,7 +414,8 @@
         <section id="accounts" class="view">
           <div class="section-actions">
             <div><h2>Caisses & banques</h2><p>Résumé cliquable des soldes et mouvements par compte.</p></div>
-            <label class="btn primary upload-label">Uploader relevé bancaire<input id="statement-upload" type="file" accept=".csv,.xlsx,.xls,.pdf,image/*"></label>
+            <select id="statement-account-select" class="compact-select" aria-label="Compte bancaire du relevé"></select>
+            <label id="statement-upload-label" class="btn primary upload-label">Uploader un relevé<input id="statement-upload" type="file" accept=".csv,.xlsx,.xls,.pdf,image/*"></label>
             <button id="add-account-btn" class="btn ghost">+ Nouveau compte</button>
           </div>
           <div id="account-cards" class="account-grid"></div>
@@ -513,6 +507,9 @@
                 <label>Signataire des proformas<select name="proformaSignerEmail"></select></label>
                 <label>Signataire des reçus<select name="receiptSignerEmail"></select></label>
                 <label>Signataire des bulletins de paie<select name="payrollSignerEmail"></select></label>
+                <label>Syntaxe référence facture<input name="invoiceReferenceTemplate" placeholder="N/Réf.{SEQ}/{YY}/FAC/AG"></label>
+                <label>Syntaxe référence proforma<input name="proformaReferenceTemplate" placeholder="N/Réf.{SEQ}/{YY}/PROF/AG"></label>
+                <p class="hint full">Variables disponibles : {SEQ}, {MM}, {YY}, {YYYY}. Exemple facture : N/Réf.{SEQ}/{YY}/FAC/AG.</p>
                 <label class="full">Pied de page facture<textarea name="footer" rows="5"></textarea></label>
                 <label class="full">Conditions générales proforma<textarea name="terms" rows="5"></textarea></label>
                 <button class="btn primary" type="submit">Actualiser le modèle</button>
@@ -548,8 +545,8 @@
             <section class="panel full">
               <div class="panel-head"><div><h2>Sauvegarde et version</h2><p>Export complémentaire des données centralisées de l’espace courant.</p></div></div>
               <div class="settings-list backup-status-list">
-                <div><strong>Version Finance OS</strong><span id="app-version-label">2.0.1</span></div>
-                <div><strong>Schéma de données</strong><span id="data-schema-label">2</span></div>
+                <div><strong>Version Finance OS</strong><span id="app-version-label">2.0.2</span></div>
+                <div><strong>Schéma de données</strong><span id="data-schema-label">3</span></div>
                 <div><strong>Stockage actuel</strong><span>PostgreSQL centralisé - cache navigateur secondaire</span></div>
               </div>
               <div class="inline-actions backup-actions">
@@ -670,7 +667,7 @@
           <label>IBAN / RIB<input name="rib" value=""></label>
           <label>SWIFT / BIC<input name="swift" value=""></label>
           <label>Gestionnaire<input name="manager" value=""></label>
-          <label class="full">Uploader le RIP / RIB<input name="ribFile" type="file" accept=".pdf,image/*"></label>
+          <label class="full">Uploader le RIB<input name="ribFile" type="file" accept=".pdf,image/*"></label>
           <button class="btn primary full" type="submit">Ajouter le compte</button>
         </form>
       </section>
@@ -682,15 +679,56 @@
           <button id="close-contact-modal" class="btn icon">×</button>
         </div>
         <form id="contact-form" class="form-grid">
-          <label>Type<select name="type"><option value="client">Client</option><option value="supplier">Fournisseur</option></select></label>
+          <input name="contactId" type="hidden">
+          <label>Catégorie<select name="type"><option value="client">Client</option><option value="supplier">Fournisseur</option></select></label>
+          <label>Nature<select name="partyType"><option value="company">Entreprise</option><option value="individual">Particulier</option></select></label>
           <label>Logo<input name="logo" maxlength="2" value="CL"></label>
           <label>Logo image optionnel<input name="logoFile" type="file" accept="image/*"></label>
-          <label>Entreprise<input name="company" value=""></label>
-          <label>Personne contact<input name="person" value=""></label>
-          <label>Téléphone<input name="phone" value=""></label>
-          <label>Email<input name="email" type="email" value=""></label>
+          <label class="full">Nom / raison sociale<input name="company" required></label>
+          <label>Identifiant fiscal<input name="taxId"></label>
+          <label>Téléphone principal<input name="phone"></label>
+          <label>Email principal<input name="email" type="email"></label>
           <label class="full">Adresse<input name="address" value=""></label>
-          <button class="btn primary full" type="submit">Enregistrer le contact</button>
+          <fieldset class="full related-contacts-fieldset">
+            <legend>Contacts rattachés</legend>
+            <div id="related-contacts-list"></div>
+            <button id="add-related-contact" class="btn ghost" type="button">+ Ajouter une personne</button>
+          </fieldset>
+          <button id="contact-submit-btn" class="btn primary full" type="submit">Enregistrer le contact</button>
+        </form>
+      </section>
+    </div>
+    <div id="account-edit-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card">
+        <div class="panel-head">
+          <div><h2>Modifier le compte</h2><p>Mettre à jour les informations générales et bancaires.</p></div>
+          <button id="close-account-edit-modal" class="btn icon" type="button">×</button>
+        </div>
+        <form id="account-edit-form" class="form-grid">
+          <label>Nom<input name="name" required></label>
+          <label>Titulaire<input name="holder"></label>
+          <label>Établissement<input name="institution"></label>
+          <label>Numéro de compte<input name="number"></label>
+          <label>Domiciliation<input name="domiciliation"></label>
+          <label>IBAN / RIB<input name="rib"></label>
+          <label>SWIFT / BIC<input name="swift"></label>
+          <label>Gestionnaire<input name="manager"></label>
+          <button class="btn primary full" type="submit">Enregistrer les modifications</button>
+        </form>
+      </section>
+    </div>
+    <div id="account-archive-modal" class="modal-backdrop is-hidden">
+      <section class="modal-card compact-modal">
+        <div class="panel-head">
+          <div><h2 id="account-archive-title">Clôturer le compte</h2><p>Le solde sera reporté et l’historique restera archivé.</p></div>
+          <button id="close-account-archive-modal" class="btn icon" type="button">×</button>
+        </div>
+        <form id="account-archive-form" class="form-grid">
+          <input name="accountId" type="hidden">
+          <input name="action" type="hidden">
+          <label class="full">Compte de report<select name="targetAccountId"></select></label>
+          <label class="full">Motif<textarea name="reason" rows="4" required></textarea></label>
+          <button id="account-archive-submit" class="btn danger full" type="submit">Confirmer</button>
         </form>
       </section>
     </div>
@@ -781,7 +819,8 @@
           <label>Date d’entrée<input name="startDate" type="date" required></label>
           <label>Date de fin prévue<input name="endDate" type="date"></label>
           <label>Salaire de base<input name="baseSalary" type="number" min="0" required></label>
-          <label>Primes fixes<input name="allowances" type="number" min="0" value="0"></label>
+          <label>Primes soumises à cotisations<input name="allowances" type="number" min="0" value="0"></label>
+          <label>Remboursements de frais non soumis<input name="expenseReimbursements" type="number" min="0" value="0"></label>
           <label>Numéro CNSS<input name="cnssNumber"></label>
           <label>Banque<input name="bankName"></label>
           <label class="full">RIB / IBAN<input name="rib"></label>
@@ -803,6 +842,6 @@
       </section>
     </div>
     <script src="./vendor/pdf-lib.min.js"></script>
-    <script src="./app.js?v=31"></script>
+    <script src="./app.js?v=32"></script>
   </body>
 </html>

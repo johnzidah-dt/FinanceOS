@@ -4,9 +4,11 @@ FinanceOS centralise la facturation, les paiements, les caisses et banques, les 
 
 ## Version
 
-Version actuelle : **2.0.1**.
+Version actuelle : **2.0.2**.
 
 Cette version est multi-utilisateur : les données sont enregistrées dans PostgreSQL et synchronisées entre les navigateurs connectés au même espace FinanceOS. Le stockage du navigateur n'est plus la source principale.
+
+Pour la paie au Togo, l'assiette CNSS inclut le salaire, les indemnités, primes, gratifications, commissions et avantages soumis. Les remboursements de frais et prestations familiales en sont exclus, conformément aux [règles de recouvrement publiées par la CNSS Togo](https://cnss.tg/prestations/recouvrement/). Les taux restent configurables par société dans FinanceOS.
 
 ## Architecture
 
