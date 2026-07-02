@@ -1,0 +1,25 @@
+name: Finalize FinanceOS 2.0.2
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Finalize clean release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '._*' -delete
+          rm -f .github/workflows/finalize-v202.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalize clean FinanceOS 2.0.2 archive"
+          git push origin main
+          git tag -f v2.0.2
+          git push origin refs/tags/v2.0.2 --force
